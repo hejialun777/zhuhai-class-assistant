@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>课表助手 · 珠海科技学院</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-row">
+    <h1>课表助手</h1>
+    <div class="spacer"></div>
+    <select id="weekSelect" style="width:auto" title="选择周次"></select>
+  </div>
+  <div class="sub" id="weekRange">—</div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="schedule">查看课表</button>
+    <button class="tab" data-tab="route">路线查询</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ============ 查看课表 ============ -->
+  <section class="panel active" id="panel-schedule">
+
+    <div class="card">
+      <div class="next" id="nextCard">
+        <span class="badge" id="nextBadge">下一节课</span>
+        <div class="main">
+          <div class="t1" id="nextTitle">加载中…</div>
+          <div class="t2" id="nextMeta"></div>
+        </div>
+        <div class="cd" id="nextCountdown"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="controls">
+        <label class="field" style="flex:2">
+          <span>搜索课程 / 老师 / 楼栋 / 教室</span>
+          <input type="text" id="searchBox" placeholder="例如：程序设计、明德楼、A418、张老师">
+        </label>
+        <button class="btn" id="clearSearch">清除</button>
+        <button class="btn" id="btnSettings">⚙ 设置</button>
+      </div>
+      <div class="settings" id="settingsBox">
+        <div class="row">
+          <span>步行速度</span>
+          <input type="range" id="walkSpeed" min="0.7" max="1.8" step="0.05">
+          <span class="val" id="walkSpeedVal"></span>
+        </div>
+        <div class="row">
+          <span>骑行速度</span>
+          <input type="range" id="bikeSpeed" min="2" max="7" step="0.1">
+          <span class="val" id="bikeSpeedVal"></span>
+        </div>
+        <div class="row">
+          <span>地图比例</span>
+          <input type="range" id="scalePx" min="1" max="4" step="0.1">
+          <span class="val" id="scalePxVal"></span>
+        </div>
+        <div class="hint">地图比例为「示意图 1 像素 = 多少米」的估算值，影响所有距离与耗时。默认 2.0 米/像素。</div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn small" id="btnResetSettings">恢复默认</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="grid-scroll">
+        <div class="timetable" id="timetable"></div>
+      </div>
+      <div class="legend">
+        <span><i style="background:#e8695f"></i>程序设计基础</span>
+        <span><i style="background:#5b9bd5"></i>高等数学A I</span>
+        <span><i style="background:#6b74c9"></i>习思想概论</span>
+        <span><i style="background:#f0a06a"></i>软件工程专业导论</span>
+        <span><i style="background:#8bc34a"></i>大学英语B I</span>
+        <span><i style="background:#3fb6a8"></i>游泳</span>
+        <span><i style="background:#ef9a9a"></i>军事理论</span>
+        <span><i style="background:#b6b6b6"></i>形势与政策I</span>
+      </div>
+      <div class="hint" style="margin-top:8px">点击任意课程可查看详情并直接规划路线。</div>
+    </div>
+
+  </section>
+
+  <!-- ============ 路线查询 ============ -->
+  <section class="panel" id="panel-route">
+
+    <div class="card">
+      <div class="controls">
+        <label class="field">
+          <span>起点</span>
+          <select id="fromSelect"></select>
+        </label>
+        <label class="field">
+          <span>终点</span>
+          <select id="toSelect"></select>
+        </label>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span class="hint">方式</span>
+          <div class="seg" id="modeSeg">
+            <button data-mode="walk" class="active">步行</button>
+            <button data-mode="bike">骑行</button>
+          </div>
+        </div>
+      </div>
+      <div class="controls" style="margin-top:10px">
+        <button class="btn primary" id="btnLocate">📍 定位我的位置</button>
+        <button class="btn" id="btnPickOnMap">在地图上点选起点</button>
+        <button class="btn ghost small" id="btnSwap">⇅ 交换起终点</button>
+        <button class="btn ghost small" id="btnRoads">显示路网</button>
+        <button class="btn ghost small" id="btnEditMk">校准地点位置</button>
+      </div>
+      <div class="hint" id="geoStatus" style="margin-top:8px">定位提示：浏览器定位需要在本机 http 服务下打开（见 README），直接双击 html 无法获取定位。</div>
+      <div id="pickTools" style="display:none;margin-top:8px">
+        <span class="hint">已进入点选模式：请在地图上单击以设定起点。</span>
+        <button class="btn small" id="btnCancelPick">取消</button>
+      </div>
+      <div id="editTools" style="display:none;margin-top:8px">
+        <span class="hint">校准模式：拖动地图上的圆点把地点挪到正确位置，改完点保存。</span>
+        <button class="btn small primary" id="btnSaveMk">保存</button>
+        <button class="btn small" id="btnResetMk">还原</button>
+        <button class="btn small" id="btnCancelEdit">取消</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="result-head">
+        <div class="result-time" id="resTime">—</div>
+        <div>
+          <div class="result-meta" id="resMeta">请选择起点与终点</div>
+          <div class="result-meta" id="resLeave" style="color:var(--brand);font-weight:600"></div>
+        </div>
+      </div>
+      <ul class="steps" id="resSteps"></ul>
+    </div>
+
+    <div class="card">
+      <div class="map-wrap" id="mapWrap">
+        <img src="assets/map.jpg" id="mapImg" alt="校园平面示意图">
+        <svg id="mapSvg" viewBox="0 0 1280 587" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="legend">
+        <span><i style="background:#2f7d5f"></i>上课地点</span>
+        <span><i style="background:#fff;border:2px solid #2f7d5f"></i>其他地点</span>
+        <span><i style="background:#1565c0"></i>起点</span>
+        <span><i style="background:#c62828"></i>终点</span>
+      </div>
+      <div class="hint" style="margin-top:6px">底图为学校示意图，标注位置为按图估读，若与实际有偏差可用「校准地点位置」拖动修正（会保存在本机浏览器中）。</div>
+    </div>
+
+  </section>
+</main>
+
+<!-- 课程详情弹窗 -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal" id="modalBox">
+    <h3 id="mTitle">—</h3>
+    <div class="hint" id="mSub"></div>
+    <div style="margin-top:12px">
+      <div class="row"><div class="k">时间</div><div class="v" id="mTime"></div></div>
+      <div class="row"><div class="k">楼栋</div><div class="v" id="mBuilding"></div></div>
+      <div class="row"><div class="k">教室</div><div class="v" id="mRoom"></div></div>
+      <div class="row"><div class="k">老师</div><div class="v" id="mTeacher"></div></div>
+      <div class="row"><div class="k">周次</div><div class="v" id="mWeeks"></div></div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="mClose">关闭</button>
+      <button class="btn primary" id="mGo">规划去这里的路线</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/router.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
