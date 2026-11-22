@@ -8,7 +8,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-echo 正在启动课表助手...
+echo 正在启动珠科管家...
 start "" http://localhost:8080/
 node serve.js
 pause

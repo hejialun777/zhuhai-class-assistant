@@ -43,7 +43,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   const url = `http://localhost:${PORT}/`;
-  console.log('课表助手已启动：' + url);
+  console.log('珠科管家已启动：' + url);
   console.log('按 Ctrl+C 停止。');
   if (process.argv.includes('--open')) {
     exec(`start "" "${url}"`, { shell: 'cmd.exe' });

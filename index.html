@@ -3,27 +3,44 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>课表助手 · 珠海科技学院</title>
+<meta name="theme-color" content="#2f7d5f">
+<meta name="description" content="珠科管家 · 珠海科技学院课表、校园路线、每日待办与月历。纯静态网页，打开即用。">
+<title>珠科管家 · 珠海科技学院</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎒</text></svg>">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
 <header class="topbar">
   <div class="topbar-row">
-    <h1>课表助手</h1>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">珠</span>
+      <div class="brand-text">
+        <h1>珠科管家</h1>
+        <p>课表 · 路线 · 待办</p>
+      </div>
+    </div>
     <div class="spacer"></div>
-    <select id="weekSelect" style="width:auto" title="选择周次"></select>
+    <div class="week-tools" id="weekTools">
+      <select id="weekSelect" title="选择周次"></select>
+    </div>
+    <button class="user-chip" id="topUserChip" type="button" title="打开我的">
+      <span class="chip-avatar" id="chipAvatar">🎓</span>
+      <span class="chip-name" id="chipName">游客</span>
+      <span class="chip-caret" aria-hidden="true">›</span>
+    </button>
   </div>
   <div class="sub" id="weekRange">—</div>
-  <nav class="tabs">
-    <button class="tab active" data-tab="schedule">查看课表</button>
+  <nav class="tabs" aria-label="主导航">
+    <button class="tab active" data-tab="schedule">课表查询</button>
     <button class="tab" data-tab="route">路线查询</button>
+    <button class="tab" data-tab="mine">我的</button>
   </nav>
 </header>
 
 <main>
 
-  <!-- ============ 查看课表 ============ -->
+  <!-- ==================== 课表查询（主页面） ==================== -->
   <section class="panel active" id="panel-schedule">
 
     <div class="card">
@@ -37,15 +54,99 @@
       </div>
     </div>
 
+    <div class="schedule-layout">
+      <div class="schedule-main">
+
+        <div class="card">
+          <div class="controls">
+            <label class="field" style="flex:2">
+              <span>搜索课程 / 老师 / 楼栋 / 教室</span>
+              <input type="text" id="searchBox" placeholder="例如：程序设计、明德楼、A418、张老师">
+            </label>
+            <button class="btn" id="clearSearch" type="button">清除</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="grid-scroll">
+            <div class="timetable" id="timetable"></div>
+          </div>
+          <div class="legend" id="courseLegend"></div>
+          <div class="hint" style="margin-top:8px">点击任意课程可查看详情并直接规划路线。周次可在右上角切换。</div>
+        </div>
+
+      </div>
+
+      <aside class="schedule-side">
+        <div class="card todo-card">
+          <div class="todo-head">
+            <div>
+              <h2>全部待办</h2>
+              <div class="todo-progress" id="todoProgress">今天还没有任务</div>
+            </div>
+            <button class="btn small ghost" id="btnCalendar" type="button">📅 月历</button>
+          </div>
+
+          <div class="week-nav">
+            <button class="icon-btn" id="prevWeek" type="button" aria-label="上一周">‹</button>
+            <span id="weekNavLabel">—</span>
+            <button class="icon-btn" id="nextWeek" type="button" aria-label="下一周">›</button>
+            <button class="btn small ghost" id="btnToday" type="button">今天</button>
+          </div>
+
+          <div class="day-strip" id="dayStrip"></div>
+
+          <div class="day-caption">
+            <div>
+              <b id="todoDateLabel">—</b>
+              <span class="today-tag" id="todoTodayTag"></span>
+            </div>
+          </div>
+
+          <form class="task-form" id="taskForm">
+            <input type="text" id="taskInput" maxlength="120" autocomplete="off" placeholder="添加任务，按回车确认">
+            <input type="time" id="taskTime" title="时间（可选）" aria-label="任务时间（可选）">
+            <button class="btn primary small" type="submit">添加</button>
+          </form>
+
+          <div class="task-list" id="taskList"></div>
+          <div class="todo-foot" id="todoFoot"></div>
+        </div>
+      </aside>
+    </div>
+
+  </section>
+
+  <!-- ==================== 路线查询 ==================== -->
+  <section class="panel" id="panel-route">
+
     <div class="card">
       <div class="controls">
-        <label class="field" style="flex:2">
-          <span>搜索课程 / 老师 / 楼栋 / 教室</span>
-          <input type="text" id="searchBox" placeholder="例如：程序设计、明德楼、A418、张老师">
+        <label class="field">
+          <span>起点</span>
+          <select id="fromSelect"></select>
         </label>
-        <button class="btn" id="clearSearch">清除</button>
-        <button class="btn" id="btnSettings">⚙ 设置</button>
+        <label class="field">
+          <span>终点</span>
+          <select id="toSelect"></select>
+        </label>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span class="hint">方式</span>
+          <div class="seg" id="modeSeg">
+            <button data-mode="walk" class="active" type="button">步行</button>
+            <button data-mode="bike" type="button">骑行</button>
+          </div>
+        </div>
       </div>
+      <div class="controls" style="margin-top:10px">
+        <button class="btn primary" id="btnLocate" type="button">📍 定位我的位置</button>
+        <button class="btn" id="btnPickOnMap" type="button">在地图上点选起点</button>
+        <button class="btn ghost small" id="btnSwap" type="button">⇅ 交换起终点</button>
+        <button class="btn ghost small" id="btnRoads" type="button">显示路网</button>
+        <button class="btn ghost small" id="btnEditMk" type="button">校准地点位置</button>
+        <button class="btn ghost small" id="btnSettings" type="button">⚙ 设置</button>
+      </div>
+
       <div class="settings" id="settingsBox">
         <div class="row">
           <span>步行速度</span>
@@ -64,68 +165,20 @@
         </div>
         <div class="hint">地图比例为「示意图 1 像素 = 多少米」的估算值，影响所有距离与耗时。默认 2.0 米/像素。</div>
         <div class="row" style="margin-top:10px">
-          <button class="btn small" id="btnResetSettings">恢复默认</button>
+          <button class="btn small" id="btnResetSettings" type="button">恢复默认</button>
         </div>
       </div>
-    </div>
 
-    <div class="card">
-      <div class="grid-scroll">
-        <div class="timetable" id="timetable"></div>
-      </div>
-      <div class="legend">
-        <span><i style="background:#e8695f"></i>程序设计基础</span>
-        <span><i style="background:#5b9bd5"></i>高等数学A I</span>
-        <span><i style="background:#6b74c9"></i>习思想概论</span>
-        <span><i style="background:#f0a06a"></i>软件工程专业导论</span>
-        <span><i style="background:#8bc34a"></i>大学英语B I</span>
-        <span><i style="background:#3fb6a8"></i>游泳</span>
-        <span><i style="background:#ef9a9a"></i>军事理论</span>
-        <span><i style="background:#b6b6b6"></i>形势与政策I</span>
-      </div>
-      <div class="hint" style="margin-top:8px">点击任意课程可查看详情并直接规划路线。</div>
-    </div>
-
-  </section>
-
-  <!-- ============ 路线查询 ============ -->
-  <section class="panel" id="panel-route">
-
-    <div class="card">
-      <div class="controls">
-        <label class="field">
-          <span>起点</span>
-          <select id="fromSelect"></select>
-        </label>
-        <label class="field">
-          <span>终点</span>
-          <select id="toSelect"></select>
-        </label>
-        <div style="display:flex;flex-direction:column;gap:4px">
-          <span class="hint">方式</span>
-          <div class="seg" id="modeSeg">
-            <button data-mode="walk" class="active">步行</button>
-            <button data-mode="bike">骑行</button>
-          </div>
-        </div>
-      </div>
-      <div class="controls" style="margin-top:10px">
-        <button class="btn primary" id="btnLocate">📍 定位我的位置</button>
-        <button class="btn" id="btnPickOnMap">在地图上点选起点</button>
-        <button class="btn ghost small" id="btnSwap">⇅ 交换起终点</button>
-        <button class="btn ghost small" id="btnRoads">显示路网</button>
-        <button class="btn ghost small" id="btnEditMk">校准地点位置</button>
-      </div>
       <div class="hint" id="geoStatus" style="margin-top:8px">定位提示：浏览器定位需要在本机 http 服务下打开（见 README），直接双击 html 无法获取定位。</div>
       <div id="pickTools" style="display:none;margin-top:8px">
         <span class="hint">已进入点选模式：请在地图上单击以设定起点。</span>
-        <button class="btn small" id="btnCancelPick">取消</button>
+        <button class="btn small" id="btnCancelPick" type="button">取消</button>
       </div>
       <div id="editTools" style="display:none;margin-top:8px">
         <span class="hint">校准模式：拖动地图上的圆点把地点挪到正确位置，改完点保存。</span>
-        <button class="btn small primary" id="btnSaveMk">保存</button>
-        <button class="btn small" id="btnResetMk">还原</button>
-        <button class="btn small" id="btnCancelEdit">取消</button>
+        <button class="btn small primary" id="btnSaveMk" type="button">保存</button>
+        <button class="btn small" id="btnResetMk" type="button">还原</button>
+        <button class="btn small" id="btnCancelEdit" type="button">取消</button>
       </div>
     </div>
 
@@ -155,6 +208,196 @@
     </div>
 
   </section>
+
+  <!-- ==================== 我的 ==================== -->
+  <section class="panel" id="panel-mine">
+    <div class="mine-layout">
+
+      <aside class="mine-nav">
+        <div class="mine-nav-title">我的</div>
+        <button class="mine-tab active" data-mine="profile" type="button">
+          <span class="mine-ico">👤</span><span>用户</span>
+        </button>
+        <button class="mine-tab" data-mine="timetable" type="button">
+          <span class="mine-ico">📚</span><span>课表</span>
+        </button>
+        <button class="mine-tab" data-mine="accounts" type="button">
+          <span class="mine-ico">🔄</span><span>切换用户</span>
+        </button>
+        <div class="mine-nav-foot" id="mineSessionMini">游客模式</div>
+      </aside>
+
+      <div class="mine-main">
+
+        <!-- 用户 -->
+        <section class="mine-section active" id="mine-profile">
+          <div class="card">
+            <div class="section-head">
+              <div>
+                <h2>用户资料</h2>
+                <div class="hint">头像和名字会显示在右上角，也会跟着这个账号保存。</div>
+              </div>
+            </div>
+
+            <div class="profile-editor">
+              <button class="avatar-big" id="profileAvatarPreview" type="button" title="点击更换头像">🎓</button>
+              <div class="profile-fields">
+                <label class="field">
+                  <span>显示名字</span>
+                  <input type="text" id="profileName" maxlength="20" autocomplete="off" placeholder="你的名字">
+                </label>
+                <div class="profile-role" id="profileRole">游客模式 · 未登录</div>
+                <div class="avatar-choices" id="avatarChoices"></div>
+                <div class="profile-actions">
+                  <button class="btn primary" id="btnSaveProfile" type="button">保存资料</button>
+                  <button class="btn" id="btnUploadAvatar" type="button">上传头像图片</button>
+                  <input type="file" id="avatarFile" accept="image/*" hidden>
+                </div>
+              </div>
+            </div>
+
+            <div class="profile-stats" id="profileStats"></div>
+          </div>
+
+          <div class="card guest-notice" id="guestNotice">
+            <h2>现在是游客模式</h2>
+            <p>游客也能用课表和待办，但数据只属于「游客」。注册一个本机账号后，就可以在多个用户之间切换，各自保存自己的课表与任务。</p>
+            <button class="btn primary" id="btnGoRegister" type="button">去注册 / 登录</button>
+          </div>
+        </section>
+
+        <!-- 课表 -->
+        <section class="mine-section" id="mine-timetable">
+          <div class="card">
+            <div class="section-head">
+              <div>
+                <h2>我的课表</h2>
+                <div class="hint" id="courseSource">正在读取…</div>
+              </div>
+              <button class="btn small ghost" id="btnResetCourses" type="button">恢复内置课表</button>
+            </div>
+
+            <div class="mine-tabs" id="courseTabs">
+              <button class="mine-subtab active" data-course-pane="import" type="button">网页导入</button>
+              <button class="mine-subtab" data-course-pane="manual" type="button">手动输入</button>
+              <button class="mine-subtab" data-course-pane="list" type="button">当前课表 <span id="courseCount">0</span></button>
+            </div>
+          </div>
+
+          <div class="course-pane active" id="pane-import">
+            <div class="card">
+              <h2>从网页导入</h2>
+              <p class="hint">把课表网页里的表格选中复制，粘贴到下面；也可以上传保存下来的网页 HTML、JSON 或文本。导入前会先显示预览，确认无误再替换或追加。</p>
+              <label class="field" style="margin-top:10px">
+                <span>粘贴课表内容</span>
+                <textarea id="importText" rows="7" placeholder="支持：带制表符的网页表格 / 保存的 HTML / 每行「课程名|老师|周一|1-2|1-16|明德楼|A418」/ JSON"></textarea>
+              </label>
+              <div class="controls" style="margin-top:10px">
+                <input type="file" id="importFile" accept=".html,.htm,.json,.txt,.csv,.tsv,text/html,application/json,text/plain">
+                <button class="btn primary" id="btnParseImport" type="button">解析预览</button>
+                <button class="btn" id="btnImportReplace" type="button" disabled>替换当前课表</button>
+                <button class="btn" id="btnImportAppend" type="button" disabled>追加到课表</button>
+              </div>
+              <div class="import-preview" id="importPreview"></div>
+              <details class="help">
+                <summary>导入格式说明</summary>
+                <ul>
+                  <li><b>网页表格文本：</b>在课表网页上选中整张表复制，粘贴进来。表头需要有「周一…周日」。</li>
+                  <li><b>网页 HTML：</b>把课表网页另存为 .html 后上传，程序会读取其中的表格。</li>
+                  <li><b>逐行文本：</b>一行一门课，字段用 <code>|</code> 分隔：<code>课程名|老师|周一|1-2|1-16|明德楼|A418</code>。</li>
+                  <li><b>JSON：</b>课程数组，至少包含 <code>name / day / periods</code>，可选 <code>teacher / weeks / building / room / placeId</code>。</li>
+                </ul>
+              </details>
+            </div>
+          </div>
+
+          <div class="course-pane" id="pane-manual">
+            <div class="card">
+              <h2 id="manualFormTitle">手动添加课程</h2>
+              <form class="course-form" id="courseForm">
+                <input type="hidden" id="editCourseId">
+                <label class="field"><span>课程名 *</span><input type="text" id="courseName" maxlength="40" placeholder="例如：高等数学A I"></label>
+                <label class="field"><span>老师</span><input type="text" id="courseTeacher" maxlength="20" placeholder="例如：甄苓"></label>
+                <label class="field"><span>星期 *</span>
+                  <select id="courseDay">
+                    <option value="1">周一</option><option value="2">周二</option><option value="3">周三</option>
+                    <option value="4">周四</option><option value="5">周五</option><option value="6">周六</option>
+                    <option value="7">周日</option>
+                  </select>
+                </label>
+                <label class="field"><span>开始节次 *</span><select id="courseStart"></select></label>
+                <label class="field"><span>结束节次 *</span><select id="courseEnd"></select></label>
+                <label class="field"><span>周次</span><input type="text" id="courseWeeks" placeholder="如 1-16、单周、双周，留空=每周"></label>
+                <label class="field"><span>楼栋</span><select id="coursePlace"></select></label>
+                <label class="field"><span>教室</span><input type="text" id="courseRoom" maxlength="30" placeholder="例如：阶梯D301"></label>
+                <label class="field"><span>颜色</span><input type="color" id="courseColor" value="#5b9bd5"></label>
+                <div class="form-actions">
+                  <button class="btn primary" id="btnCourseSubmit" type="submit">添加到课表</button>
+                  <button class="btn" id="btnCourseCancel" type="button" hidden>取消编辑</button>
+                </div>
+              </form>
+              <div class="hint" style="margin-top:10px">第一次编辑或添加时，会把当前课表复制成「我的课表」，之后随时可以点右上角「恢复内置课表」还原。</div>
+            </div>
+          </div>
+
+          <div class="course-pane" id="pane-list">
+            <div class="card">
+              <h2>当前课表</h2>
+              <div class="course-list" id="courseList"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 切换用户 -->
+        <section class="mine-section" id="mine-accounts">
+          <div class="card">
+            <div class="section-head">
+              <div>
+                <h2>当前账号</h2>
+                <div class="hint">每个账号有自己独立的课表、待办和头像。</div>
+              </div>
+            </div>
+            <div id="currentAccountBox"></div>
+          </div>
+
+          <div class="auth-grid">
+            <div class="card">
+              <h2>登录</h2>
+              <form class="auth-form" id="loginForm">
+                <label class="field"><span>用户名</span><input type="text" id="loginUser" autocomplete="username" placeholder="本机已注册的用户名"></label>
+                <label class="field"><span>密码</span><input type="password" id="loginPass" autocomplete="current-password" placeholder="密码"></label>
+                <div class="auth-error" id="loginError"></div>
+                <button class="btn primary" type="submit">登录并切换</button>
+              </form>
+            </div>
+
+            <div class="card">
+              <div class="section-head">
+                <h2>注册新用户</h2>
+                <button class="btn small ghost" id="btnToggleRegister" type="button">展开</button>
+              </div>
+              <form class="auth-form" id="registerForm" hidden>
+                <label class="field"><span>用户名 *</span><input type="text" id="regUser" autocomplete="username" placeholder="2–24 位中文 / 字母 / 数字"></label>
+                <label class="field"><span>显示名字</span><input type="text" id="regName" maxlength="20" placeholder="例如：小林"></label>
+                <label class="field"><span>密码 *</span><input type="password" id="regPass" autocomplete="new-password" placeholder="至少 4 位"></label>
+                <label class="field"><span>确认密码 *</span><input type="password" id="regPass2" autocomplete="new-password" placeholder="再输入一次"></label>
+                <label class="check-line"><input type="checkbox" id="regMigrate" checked> 把当前游客的课表和待办带进新账号</label>
+                <div class="auth-error" id="registerError"></div>
+                <button class="btn primary" type="submit">注册并登录</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>本机用户</h2>
+            <div class="account-list" id="accountList"></div>
+            <div class="hint" style="margin-top:10px">账号与数据只保存在这台设备的浏览器里，不会上传到服务器；清除浏览器数据后无法找回。它不是学校统一认证。</div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </section>
 </main>
 
 <!-- 课程详情弹窗 -->
@@ -170,14 +413,37 @@
       <div class="row"><div class="k">周次</div><div class="v" id="mWeeks"></div></div>
     </div>
     <div class="actions">
-      <button class="btn" id="mClose">关闭</button>
-      <button class="btn primary" id="mGo">规划去这里的路线</button>
+      <button class="btn" id="mClose" type="button">关闭</button>
+      <button class="btn primary" id="mGo" type="button">规划去这里的路线</button>
     </div>
   </div>
 </div>
 
+<!-- 月历弹窗 -->
+<div class="modal-mask" id="calendarMask">
+  <div class="modal calendar-modal">
+    <div class="cal-head">
+      <button class="icon-btn" id="calPrev" type="button" aria-label="上个月">‹</button>
+      <h3 id="calTitle">—</h3>
+      <button class="icon-btn" id="calNext" type="button" aria-label="下个月">›</button>
+      <div class="spacer"></div>
+      <button class="btn small" id="calToday" type="button">今天</button>
+      <button class="btn small ghost" id="calClose" type="button">关闭</button>
+    </div>
+    <div class="cal-weekdays">
+      <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="hint" style="margin-top:10px">有任务的日期会显示任务摘要；点击某一天可以跳回那天的待办。</div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
 <script src="js/data.js"></script>
 <script src="js/router.js"></script>
+<script src="js/store.js"></script>
+<script src="js/import.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
