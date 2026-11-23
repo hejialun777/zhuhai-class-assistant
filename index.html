@@ -3,10 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#2f7d5f">
+<meta name="theme-color" id="themeColorMeta" content="#2f7d5f">
+<meta name="color-scheme" content="light dark">
 <meta name="description" content="珠科管家 · 珠海科技学院课表、校园路线、每日待办与月历。纯静态网页，打开即用。">
 <title>珠科管家 · 珠海科技学院</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎒</text></svg>">
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem("zhuke.theme");
+    if (t !== "dark" && t !== "light") {
+      t = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    document.documentElement.setAttribute("data-theme", t);
+    var meta = document.getElementById("themeColorMeta");
+    if (meta) meta.setAttribute("content", t === "dark" ? "#163a2c" : "#2f7d5f");
+  } catch (e) {
+    document.documentElement.setAttribute("data-theme", "light");
+  }
+})();
+</script>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -24,6 +40,7 @@
     <div class="week-tools" id="weekTools">
       <select id="weekSelect" title="选择周次"></select>
     </div>
+    <button class="theme-toggle" id="themeToggle" type="button" aria-label="切换深色模式" title="切换深色模式">🌙</button>
     <button class="user-chip" id="topUserChip" type="button" title="打开我的">
       <span class="chip-avatar" id="chipAvatar">🎓</span>
       <span class="chip-name" id="chipName">游客</span>
@@ -47,7 +64,7 @@
       <div class="next" id="nextCard">
         <span class="badge" id="nextBadge">下一节课</span>
         <div class="main">
-          <div class="t1" id="nextTitle">加载中…</div>
+          <div class="t1" id="nextTitle"></div>
           <div class="t2" id="nextMeta"></div>
         </div>
         <div class="cd" id="nextCountdown"></div>
@@ -292,6 +309,40 @@
             <p>游客也能用课表和待办，但数据只属于「游客」。注册一个本机账号后，就可以在多个用户之间切换，各自保存自己的课表与任务。</p>
             <button class="btn primary" id="btnGoRegister" type="button">去注册 / 登录</button>
           </div>
+          <div class="card data-card">
+            <div class="section-head">
+              <div>
+                <h2>数据与备份</h2>
+                <div class="hint">账号、课表、待办和番茄记录都只保存在这台浏览器里。</div>
+              </div>
+              <span class="data-size" id="dataUsage">—</span>
+            </div>
+            <div class="backup-line">
+              <span class="backup-dot" id="backupDot" aria-hidden="true"></span>
+              <span id="backupStatus">还没有导出过备份</span>
+            </div>
+            <div class="backup-actions">
+              <button class="btn primary" id="btnExportBackup" type="button">导出备份</button>
+              <button class="btn" id="btnImportBackup" type="button">导入备份</button>
+              <input type="file" id="importBackupFile" accept=".json,application/json" hidden>
+            </div>
+            <div class="hint" style="margin-top:8px">备份文件包含本机账号、课表、待办、番茄记录和设置，密码以摘要形式保存。导入会覆盖当前浏览器里的数据，之后页面会自动刷新。</div>
+          </div>
+
+          <div class="card about-card">
+            <div class="section-head">
+              <div>
+                <h2>关于与帮助</h2>
+                <div class="hint">珠科管家 · 课表、路线、待办和番茄钟</div>
+              </div>
+            </div>
+            <div class="about-links">
+              <button class="about-link" id="btnAbout" type="button"><span>ℹ️ 关于珠科管家</span><small>版本与数据说明</small></button>
+              <button class="about-link" id="btnHelp" type="button"><span>❓ 使用帮助</span><small>课表、闹钟、番茄钟</small></button>
+              <a class="about-link" href="https://github.com/hejialun777/zhuhai-class-assistant/issues" target="_blank" rel="noopener noreferrer"><span>💬 反馈</span><small>在 GitHub 提 Issue</small></a>
+            </div>
+          </div>
+
         </section>
 
         <!-- 课表 -->
@@ -300,7 +351,7 @@
             <div class="section-head">
               <div>
                 <h2>我的课表</h2>
-                <div class="hint" id="courseSource">正在读取…</div>
+                <div class="hint" id="courseSource"></div>
               </div>
               <button class="btn small ghost" id="btnResetCourses" type="button">恢复内置课表</button>
             </div>
@@ -521,6 +572,17 @@
       <button class="btn primary" id="alarmRingDone" type="button">完成这条</button>
       <button class="btn" id="alarmRingSnooze" type="button">5 分钟后再提醒</button>
       <button class="btn ghost" id="alarmRingDismiss" type="button">知道了</button>
+    </div>
+  </div>
+</div>
+
+<!-- 关于 / 帮助 -->
+<div class="modal-mask" id="infoMask">
+  <div class="modal info-modal">
+    <h3 id="infoTitle">—</h3>
+    <div class="info-body" id="infoBody"></div>
+    <div class="actions">
+      <button class="btn primary" id="infoClose" type="button">知道了</button>
     </div>
   </div>
 </div>

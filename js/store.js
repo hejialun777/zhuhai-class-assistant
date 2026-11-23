@@ -11,6 +11,9 @@
   const K_ACCOUNTS = 'zhuke.accounts.v1';
   const K_SESSION  = 'zhuke.session.v1';
   const K_USER     = 'zhuke.user.v1.';
+  const K_THEME    = 'zhuke.theme';
+  const K_LAST_BACKUP = 'zhuke.backup.lastExport';
+  const APP_PREFIXES = ['zhuke.', 'campusTool.'];
   const GUEST      = '__guest__';
   const GUEST_PROFILE = { displayName: '游客', avatar: '🎓' };
   const USERNAME_RE = /^[A-Za-z0-9_一-龥]{2,24}$/;
@@ -139,6 +142,75 @@
     data.courses = null;
     persistCurrent();
     emit('data', { scope: 'courses' });
+  }
+
+  function appStorageKeys() {
+    const keys = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && APP_PREFIXES.some((p) => k.indexOf(p) === 0)) keys.push(k);
+      }
+    } catch (e) { /* 忽略 */ }
+    return keys.sort();
+  }
+
+  function getDataUsage() {
+    let bytes = 0;
+    appStorageKeys().forEach((k) => {
+      let v = '';
+      try { v = localStorage.getItem(k) || ''; } catch (e) { /* 忽略 */ }
+      bytes += (k.length + v.length) * 2;
+    });
+    return bytes;
+  }
+
+  function markBackup() {
+    const ts = new Date().toISOString();
+    try { localStorage.setItem(K_LAST_BACKUP, ts); } catch (e) { /* 忽略 */ }
+    return ts;
+  }
+
+  function getLastBackup() {
+    try { return localStorage.getItem(K_LAST_BACKUP) || ''; } catch (e) { return ''; }
+  }
+
+  function exportBackup() {
+    const data = {};
+    appStorageKeys().forEach((k) => {
+      try { data[k] = localStorage.getItem(k) || ''; } catch (e) { /* 忽略 */ }
+    });
+    return {
+      format: 'zhuke-backup',
+      app: '珠科管家',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      localStorage: data,
+    };
+  }
+
+  function importBackup(obj) {
+    if (!obj || obj.format !== 'zhuke-backup' || !obj.localStorage || typeof obj.localStorage !== 'object') {
+      throw new Error('不是有效的珠科管家备份文件');
+    }
+    const incoming = {};
+    Object.keys(obj.localStorage).forEach((k) => {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') return;
+      if (!APP_PREFIXES.some((p) => k.indexOf(p) === 0)) return;
+      const v = obj.localStorage[k];
+      if (typeof v === 'string') incoming[k] = v;
+    });
+    if (!Object.keys(incoming).length) throw new Error('备份文件里没有可恢复的数据');
+
+    appStorageKeys().forEach((k) => {
+      try { localStorage.removeItem(k); } catch (e) { /* 忽略 */ }
+    });
+    let count = 0;
+    Object.keys(incoming).forEach((k) => {
+      try { localStorage.setItem(k, incoming[k]); count++; } catch (e) { /* 忽略 */ }
+    });
+    cache = null;
+    return count;
   }
 
   function getPomodoros() {
@@ -313,6 +385,11 @@
     resetCourses,
     getPomodoros,
     addPomodoro,
+    getDataUsage,
+    markBackup,
+    getLastBackup,
+    exportBackup,
+    importBackup,
     register,
     login,
     switchTo,

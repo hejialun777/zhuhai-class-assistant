@@ -13,6 +13,8 @@
 
   const LS_SETTINGS = 'campusTool.settings';
   const LS_MARKERS  = 'campusTool.markerOverrides';
+  const THEME_KEY   = 'zhuke.theme';
+  const APP_VERSION = 'v1.4';
   const AVATAR_EMOJIS = ['🎓', '🐻', '🦊', '🐼', '🐨', '🐯', '🐸', '🐧', '🌻', '🍀', '🚀', '⭐'];
   const POMO_FOCUS = 25 * 60;
   const POMO_BREAK = 5 * 60;
@@ -127,6 +129,131 @@
     el.classList.add('show');
     clearTimeout(toast._timer);
     toast._timer = setTimeout(() => el.classList.remove('show'), 2400);
+  }
+
+
+  /* =========================================================== 主题 */
+  function currentTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+
+  function applyTheme(theme, persist) {
+    theme = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', theme);
+    const meta = document.getElementById('themeColorMeta');
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#163a2c' : '#2f7d5f');
+    const btn = $('#themeToggle');
+    if (btn) {
+      btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+      btn.title = theme === 'dark' ? '切换到浅色模式' : '切换到深色模式';
+      btn.setAttribute('aria-label', btn.title);
+    }
+    if (persist) {
+      try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* 忽略 */ }
+    }
+  }
+
+  function initTheme() {
+    applyTheme(currentTheme(), false);
+    const btn = $('#themeToggle');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const next = currentTheme() === 'dark' ? 'light' : 'dark';
+        applyTheme(next, true);
+        toast(next === 'dark' ? '已切换到深色模式' : '已切换到浅色模式');
+      });
+    }
+    const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq) {
+      const onChange = (e) => {
+        let saved = null;
+        try { saved = localStorage.getItem(THEME_KEY); } catch (err) { /* 忽略 */ }
+        if (!saved) applyTheme(e.matches ? 'dark' : 'light', false);
+      };
+      if (mq.addEventListener) mq.addEventListener('change', onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+    }
+  }
+
+  /* =========================================================== 备份 */
+  function fmtBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+  }
+
+  function fmtDateTime(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return mdCN(d) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  function renderDataMeta() {
+    const sizeEl = $('#dataUsage');
+    const statusEl = $('#backupStatus');
+    const dot = $('#backupDot');
+    if (!sizeEl || !statusEl) return;
+    sizeEl.textContent = fmtBytes(Store.getDataUsage());
+    const last = Store.getLastBackup();
+    if (last) {
+      statusEl.textContent = '上次备份：' + fmtDateTime(last);
+      if (dot) dot.classList.add('ok');
+    } else {
+      statusEl.textContent = '还没有导出过备份';
+      if (dot) dot.classList.remove('ok');
+    }
+  }
+
+  function exportBackup() {
+    Store.markBackup();
+    const data = Store.exportBackup();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '珠科管家备份-' + ymd(new Date()) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1200);
+    toast('备份已导出');
+    renderDataMeta();
+  }
+
+  async function importBackupFile(file) {
+    if (!file) return;
+    if (!window.confirm('导入备份会用文件里的数据覆盖当前浏览器中的账号、课表、待办和番茄记录，继续？')) return;
+    try {
+      const text = await file.text();
+      const obj = JSON.parse(text);
+      const count = Store.importBackup(obj);
+      toast('已恢复 ' + count + ' 项数据，页面即将刷新');
+      setTimeout(() => location.reload(), 900);
+    } catch (e) {
+      toast('备份导入失败：' + (e.message || '文件格式不正确'));
+    }
+  }
+
+  /* =========================================================== 关于/帮助 */
+  function openInfo(kind) {
+    const isHelp = kind === 'help';
+    $('#infoTitle').textContent = isHelp ? '使用帮助' : '关于珠科管家';
+    $('#infoBody').innerHTML = isHelp
+      ? `<div class="info-block"><b>课表</b><p>顶部周次可以切换；点课程看详情和路线。去「我的 → 课表」可以导入截图、网页表格或手动添加课程。</p></div>
+         <div class="info-block"><b>待办与闹钟</b><p>在「全部待办」输入任务；点任务右侧铃铛设置提醒。闹钟只在页面打开时生效，允许浏览器通知后还会发系统通知。</p></div>
+         <div class="info-block"><b>番茄钟</b><p>专注 25 分钟算一个番茄，完成后会亮起 🍅。完成专注后自动进入 5 分钟休息。</p></div>
+         <div class="info-block"><b>数据</b><p>所有数据都保存在当前浏览器。「我的 → 数据与备份」可以导出 / 导入 JSON 备份；换设备前记得先导出。</p></div>`
+      : `<p><b>珠科管家</b> 是一个面向珠海科技学院的校园小工具，把课表、校园路线、每日待办、闹钟和番茄钟放在一个网页里。</p>
+         <div class="info-row"><span>版本</span><b>${APP_VERSION} · 2026.11</b></div>
+         <div class="info-row"><span>数据位置</span><b>当前浏览器 localStorage</b></div>
+         <div class="info-row"><span>在线地址</span><a href="https://hejialun777.github.io/zhuhai-class-assistant/" target="_blank" rel="noopener noreferrer">hejialun777.github.io/zhuhai-class-assistant</a></div>
+         <div class="info-row"><span>开源地址</span><a href="https://github.com/hejialun777/zhuhai-class-assistant" target="_blank" rel="noopener noreferrer">GitHub · zhuhai-class-assistant</a></div>
+         <p class="hint" style="margin-top:10px">这是纯静态网页，不是学校官方系统；账号和课表数据只保存在本机浏览器。</p>`;
+    $('#infoMask').classList.add('show');
+  }
+
+  function closeInfo() {
+    $('#infoMask').classList.remove('show');
   }
 
   const WEEK1 = parseYmd(TERM.week1Monday);
@@ -917,7 +1044,7 @@
 
     const list = $('#taskList');
     if (!tasks.length) {
-      list.innerHTML = '<div class="task-empty"><span class="big">☁️</span>还没有待办，添加一条吧</div>';
+      list.innerHTML = '<div class="empty-state compact"><div class="empty-icon">🗓️</div><div class="empty-title">这一天还没有待办</div><div class="empty-sub">添加第一件事，让今天有个起点。</div></div>';
     } else {
       let html = '';
       if (pending.length) {
@@ -1451,11 +1578,53 @@
     const tasks = Store.getTasks();
     const custom = Store.getCourses();
     const courses = custom === null ? COURSES : custom;
-    const names = new Set(courses.map((c) => c.name));
+    const now = new Date();
+    const monday = mondayOfDate(now);
+    const startKey = ymd(monday);
+    const endKey = ymd(addDays(monday, 6));
+
+    const weekTasks = tasks.filter((t) => t.date >= startKey && t.date <= endKey);
+    const weekDone = weekTasks.filter((t) => t.done).length;
+    const weekTotal = weekTasks.length;
+    const weekRate = weekTotal ? Math.round((weekDone / weekTotal) * 100) : 0;
+
+    const activeDays = new Set();
+    tasks.forEach((t) => {
+      if (!t.done) return;
+      const d = t.completedAt ? new Date(t.completedAt) : parseYmd(t.date);
+      if (!isNaN(d.getTime())) activeDays.add(ymd(d));
+    });
+    Store.getPomodoros().forEach((p) => { if (p.date) activeDays.add(p.date); });
+    let cursor = startOfDay(now);
+    if (!activeDays.has(ymd(cursor))) cursor = addDays(cursor, -1);
+    let streak = 0;
+    while (activeDays.has(ymd(cursor)) && streak < 3660) {
+      streak++;
+      cursor = addDays(cursor, -1);
+    }
+
+    const currentWeek = weekOfDate(now);
+    const todayClasses = courses.filter((c) => courseRunsThisWeek(c, currentWeek) && c.day === todayIndex()).length;
+    const weekPeriods = courses
+      .filter((c) => courseRunsThisWeek(c, currentWeek))
+      .reduce((sum, c) => sum + c.periods.length, 0);
+
     $('#profileStats').innerHTML = `
-      <div class="stat-tile"><b>${tasks.length}</b><span>全部待办</span></div>
-      <div class="stat-tile"><b>${tasks.filter((t) => t.done).length}</b><span>已完成</span></div>
-      <div class="stat-tile"><b>${names.size}</b><span>课表课程</span></div>`;
+      <div class="dash-top">
+        <div class="dash-ring" style="--p:${weekRate}">
+          <div class="dash-ring-inner"><b>${weekRate}%</b><span>本周</span></div>
+        </div>
+        <div class="dash-ring-text">
+          <div class="dash-title">本周完成率</div>
+          <div class="hint">${weekTotal ? `完成 ${weekDone} / ${weekTotal} 条待办` : '本周还没有待办，先添加一件小事吧'}</div>
+        </div>
+      </div>
+      <div class="dash-tiles">
+        <div class="stat-tile"><span class="stat-icon">🔥</span><b>${streak}<span class="unit">天</span></b><span>连续打卡</span></div>
+        <div class="stat-tile"><span class="stat-icon">📅</span><b>${todayClasses}<span class="unit">节</span></b><span>今日课程</span></div>
+        <div class="stat-tile"><span class="stat-icon">📚</span><b>${weekPeriods}<span class="unit">节</span></b><span>本周总课时</span></div>
+      </div>`;
+    renderDataMeta();
   }
 
   function updateAvatarPreview() {
@@ -1509,7 +1678,7 @@
     const el = $('#courseList');
     if (!el) return;
     if (!activeCourses.length) {
-      el.innerHTML = '<div class="course-empty">当前课表是空的。可以导入或手动添加课程。</div>';
+      el.innerHTML = `<div class="empty-state"><div class="empty-icon">📚</div><div class="empty-title">当前课表是空的</div><div class="empty-sub">导入一张课表截图，或者手动添加课程。</div><div class="empty-actions"><button class="btn primary small" type="button" data-empty-course="import">去导入课表</button><button class="btn small" type="button" data-empty-course="manual">手动添加</button></div></div>`;
       return;
     }
     let html = '';
@@ -1899,7 +2068,7 @@
           <button class="btn small ghost" type="button" data-switch-cancel="1">取消</button>
         </form>
       </div>`;
-    }).join('');
+    }).join('') + (users.some((u) => !u.guest) ? '' : `<div class="empty-state compact account-empty"><div class="empty-icon">👤</div><div class="empty-title">还没有注册用户</div><div class="empty-sub">注册一个本机账号，给课表和待办分开一个空间。</div><button class="btn small" type="button" data-empty-register="1">去注册</button></div>`);
   }
 
   function showMineAccountsAndRegister() {
@@ -1985,6 +2154,7 @@
 
   /* =========================================================== 初始化 */
   function init() {
+    initTheme();
     refreshActiveCourses();
     buildWeekSelect();
     fillCourseFormSelects();
@@ -2130,6 +2300,19 @@
     });
     $('#btnGoRegister').addEventListener('click', showMineAccountsAndRegister);
 
+    /* 备份 / 关于 / 帮助 */
+    $('#btnExportBackup').addEventListener('click', exportBackup);
+    $('#btnImportBackup').addEventListener('click', () => $('#importBackupFile').click());
+    $('#importBackupFile').addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      importBackupFile(file);
+    });
+    $('#btnAbout').addEventListener('click', () => openInfo('about'));
+    $('#btnHelp').addEventListener('click', () => openInfo('help'));
+    $('#infoClose').addEventListener('click', closeInfo);
+    $('#infoMask').addEventListener('click', (e) => { if (e.target === $('#infoMask')) closeInfo(); });
+
     /* 课表导入 */
     $('#ocrImageFile').addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
@@ -2156,6 +2339,8 @@
     $('#courseForm').addEventListener('submit', submitCourseForm);
     $('#btnCourseCancel').addEventListener('click', () => { resetCourseForm(); setCoursePane('list'); });
     $('#courseList').addEventListener('click', (e) => {
+      const empty = e.target.closest('button[data-empty-course]');
+      if (empty) { setCoursePane(empty.dataset.emptyCourse); return; }
       const edit = e.target.closest('button[data-edit-course]');
       const del = e.target.closest('button[data-del-course]');
       if (edit) editCourse(edit.dataset.editCourse);
@@ -2184,6 +2369,10 @@
       }
     });
     $('#accountList').addEventListener('click', (e) => {
+      if (e.target.closest('button[data-empty-register]')) {
+        showMineAccountsAndRegister();
+        return;
+      }
       const row = e.target.closest('.acct-row');
       if (!row) return;
       const guest = e.target.closest('button[data-switch-guest]');
@@ -2264,6 +2453,7 @@
       closeModal();
       closeCalendar();
       closeAlarmSettings();
+      closeInfo();
       if (state.alarmRingTaskId) dismissAlarm();
     });
 
