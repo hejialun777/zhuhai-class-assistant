@@ -9,10 +9,13 @@
   const $$ = (s) => Array.from(document.querySelectorAll(s));
   const Store = window.ZhukeStore;
   const Importer = window.ScheduleImport;
+  const OCR = window.ScheduleOCR;
 
   const LS_SETTINGS = 'campusTool.settings';
   const LS_MARKERS  = 'campusTool.markerOverrides';
   const AVATAR_EMOJIS = ['🎓', '🐻', '🦊', '🐼', '🐨', '🐯', '🐸', '🐧', '🌻', '🍀', '🚀', '⭐'];
+  const POMO_FOCUS = 25 * 60;
+  const POMO_BREAK = 5 * 60;
 
   /* ---------------------------------------------------------------- 状态 */
   const state = {
@@ -33,6 +36,16 @@
     editingCourseId: null,
     pendingImport: null,
     pendingAvatar: null,
+    taskAlarmOn: false,
+    ocrFile: null,
+    ocrImageSize: null,
+    ocrBusy: false,
+    alarmSetTaskId: null,
+    alarmRingTaskId: null,
+    alarmCheckBusy: false,
+    alarmSoundTimer: null,
+    audioCtx: null,
+    pomodoro: { mode: 'focus', running: false, remaining: POMO_FOCUS, endsAt: null, duration: POMO_FOCUS, message: '' },
   };
   state.calMonth = new Date(state.selectedDate.getFullYear(), state.selectedDate.getMonth(), 1);
 
@@ -82,6 +95,25 @@
   function todayIndex() { const d = new Date().getDay(); return d === 0 ? 7 : d; }
   function sameDay(a, b) { return ymd(a) === ymd(b); }
   function isPhone() { return window.innerWidth <= 720; }
+  function periodText(first, last) {
+    return first === last ? `第${first}节` : `第${first}-${last}节`;
+  }
+  function fmtMMSS(sec) {
+    sec = Math.max(0, Math.round(sec));
+    return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+  }
+  function taskById(id) { return Store.getTasks().find((t) => t.id === id) || null; }
+  function alarmDateTime(task) {
+    if (!task || !task.alarmDate || !task.alarmTime) return null;
+    const d = new Date(task.alarmDate + 'T' + task.alarmTime + ':00');
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function alarmLabel(task) {
+    const due = alarmDateTime(task);
+    if (!due) return '';
+    const same = task.alarmDate === ymd(state.selectedDate);
+    return (same ? '' : mdCN(due) + ' ') + task.alarmTime;
+  }
 
   function avatarHtml(avatar) {
     const a = String(avatar || '🎓');
@@ -369,7 +401,7 @@
       box.className = 'next';
       $('#nextBadge').textContent = '正在上课';
       $('#nextTitle').textContent = `${ongoing.c.name} @${ongoing.place ? ongoing.place.name : courseBuilding(ongoing.c)} ${ongoing.c.room || ''}`;
-      $('#nextMeta').textContent = `${DAY_NAMES[ongoing.day - 1]} 第${ongoing.first}-${ongoing.last}节 · ${PERIODS[ongoing.first - 1].start}–${PERIODS[ongoing.last - 1].end}`;
+      $('#nextMeta').textContent = `${DAY_NAMES[ongoing.day - 1]} ${periodText(ongoing.first, ongoing.last)} · ${PERIODS[ongoing.first - 1].start}–${PERIODS[ongoing.last - 1].end}`;
       $('#nextCountdown').innerHTML =
         '<span class="cd-label">距离下课还有</span>' + fmtDur(ongoing.endMin - nowMin);
       return;
@@ -390,7 +422,7 @@
     $('#nextTitle').textContent =
       `${target.c.name} @${target.place ? target.place.name : courseBuilding(target.c)} ${target.c.room || ''}`;
     $('#nextMeta').textContent =
-      `${DAY_NAMES[target.day - 1]} 第${target.first}-${target.last}节 · ` +
+      `${DAY_NAMES[target.day - 1]} ${periodText(target.first, target.last)} · ` +
       `${PERIODS[target.first - 1].start}–${PERIODS[target.last - 1].end} · ` +
       (target.c.teacher || '老师待补充');
 
@@ -434,7 +466,7 @@
     $('#mTitle').innerHTML = `<span class="swatch" style="background:${esc(c.color || '#5b9bd5')}"></span>${esc(c.name)}`;
     $('#mSub').textContent = c.note || (courseRunsThisWeek(c, state.week) ? '' : '（本周不上此课）');
     $('#mTime').textContent =
-      `${DAY_NAMES[c.day - 1]} 第${first}-${last}节  ${PERIODS[first - 1].start}–${PERIODS[last - 1].end}`;
+      `${DAY_NAMES[c.day - 1]} ${periodText(first, last)}  ${PERIODS[first - 1].start}–${PERIODS[last - 1].end}`;
     $('#mBuilding').textContent = p ? p.full : (c.building || '未关联校园地点');
     $('#mRoom').textContent = c.room || '未填写';
     $('#mTeacher').innerHTML = c.teacher ? esc(c.teacher) : '<span class="hint">未填写，可在「我的 → 课表」补充</span>';
@@ -905,25 +937,60 @@
   }
 
   function taskItemHtml(t) {
+    const meta = [];
+    if (t.time && !t.alarm) meta.push('⏰ ' + esc(t.time));
+    if (t.alarm) meta.push(`<span class="alarm-tag">🔔 ${esc(alarmLabel(t))}</span>`);
     return `<div class="task-item${t.done ? ' done' : ''}" data-id="${esc(t.id)}">
       <button class="task-check" type="button" data-action="toggle" data-id="${esc(t.id)}" aria-label="${t.done ? '标记为未完成' : '标记为完成'}" aria-pressed="${t.done ? 'true' : 'false'}"></button>
       <div class="task-body">
         <div class="task-text">${esc(t.text)}</div>
-        ${t.time ? `<div class="task-meta">⏰ ${esc(t.time)}</div>` : ''}
+        ${meta.length ? `<div class="task-meta">${meta.join('')}</div>` : ''}
       </div>
-      <button class="task-del" type="button" data-action="del" data-id="${esc(t.id)}" aria-label="删除任务">×</button>
+      <div class="task-actions">
+        ${t.done ? '' : `<button class="task-alarm${t.alarm ? ' on' : ''}" type="button" data-action="alarm" data-id="${esc(t.id)}" title="${t.alarm ? '修改闹钟' : '设置闹钟'}" aria-label="${t.alarm ? '修改闹钟' : '设置闹钟'}">${t.alarm ? '🔔' : '🔕'}</button>`}
+        <button class="task-del" type="button" data-action="del" data-id="${esc(t.id)}" aria-label="删除任务">×</button>
+      </div>
     </div>`;
   }
 
-  function addTask(text, time) {
+  function setTaskAlarmToggle(on) {
+    state.taskAlarmOn = !!on;
+    const btn = $('#taskAlarmToggle');
+    if (!btn) return;
+    btn.classList.toggle('active', state.taskAlarmOn);
+    btn.setAttribute('aria-pressed', state.taskAlarmOn ? 'true' : 'false');
+    btn.title = state.taskAlarmOn ? '添加时会同时设置闹钟' : '添加任务时同时设置闹钟';
+  }
+
+  function addTask(text, time, alarm) {
     text = String(text || '').trim();
     if (!text) { $('#taskInput').focus(); return; }
+    time = String(time || '');
+    if (alarm) {
+      if (!time) {
+        toast('设置闹钟需要先填写时间');
+        $('#taskTime').focus();
+        return;
+      }
+      const due = new Date(ymd(state.selectedDate) + 'T' + time + ':00');
+      if (due <= new Date()) {
+        toast('闹钟时间已经过去，请换一个时间');
+        $('#taskTime').focus();
+        return;
+      }
+      primeAudio();
+      requestNotificationPermission();
+    }
     const tasks = Store.getTasks();
     tasks.push({
       id: uid('t-'),
       text,
       date: ymd(state.selectedDate),
-      time: String(time || ''),
+      time,
+      alarm: !!alarm,
+      alarmDate: alarm ? ymd(state.selectedDate) : '',
+      alarmTime: alarm ? time : '',
+      alarmFiredKey: '',
       done: false,
       createdAt: new Date().toISOString(),
       completedAt: null,
@@ -931,8 +998,9 @@
     Store.saveTasks(tasks);
     $('#taskInput').value = '';
     $('#taskTime').value = '';
+    setTaskAlarmToggle(false);
     $('#taskInput').focus();
-    toast('已添加任务');
+    toast(alarm ? '已添加任务并设置闹钟' : '已添加任务');
   }
 
   function toggleTask(id) {
@@ -948,6 +1016,330 @@
     const tasks = Store.getTasks().filter((x) => x.id !== id);
     Store.saveTasks(tasks);
     toast('已删除任务');
+  }
+
+  /* =========================================================== 闹钟 */
+  function primeAudio() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    try {
+      if (!state.audioCtx) state.audioCtx = new Ctx();
+      if (state.audioCtx.state === 'suspended') state.audioCtx.resume().catch(() => {});
+    } catch (e) { /* 忽略音频限制 */ }
+  }
+
+  function beep(freq, delay, duration, gain) {
+    const ctx = state.audioCtx;
+    if (!ctx) return;
+    try {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq;
+      o.connect(g);
+      g.connect(ctx.destination);
+      const t = ctx.currentTime + delay;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(gain || 0.08, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+      o.start(t);
+      o.stop(t + duration + 0.03);
+    } catch (e) { /* 忽略 */ }
+  }
+
+  function playAlarmBurst() {
+    primeAudio();
+    beep(880, 0, 0.16, 0.1);
+    beep(1046, 0.22, 0.16, 0.1);
+    beep(880, 0.44, 0.2, 0.1);
+  }
+
+  function playChime() {
+    primeAudio();
+    beep(660, 0, 0.16, 0.07);
+    beep(880, 0.18, 0.18, 0.07);
+    beep(1046, 0.38, 0.24, 0.07);
+  }
+
+  function startAlarmSound() {
+    stopAlarmSound();
+    playAlarmBurst();
+    state.alarmSoundTimer = setInterval(playAlarmBurst, 3500);
+  }
+
+  function stopAlarmSound() {
+    if (state.alarmSoundTimer) clearInterval(state.alarmSoundTimer);
+    state.alarmSoundTimer = null;
+  }
+
+  function requestNotificationPermission() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'default') return;
+    try {
+      Notification.requestPermission().then((p) => {
+        if (p === 'granted') toast('系统通知已开启');
+      }).catch(() => {});
+    } catch (e) { /* 忽略 */ }
+  }
+
+  function openAlarmSettings(id) {
+    const task = taskById(id);
+    if (!task) return;
+    state.alarmSetTaskId = id;
+    $('#alarmSetTask').textContent = task.text;
+    let date = task.alarmDate || task.date;
+    const today = ymd(new Date());
+    if (!date || date < today) date = today;
+    const now = new Date();
+    let time = task.alarmTime || task.time;
+    if (!time) time = minToHHMM(now.getHours() * 60 + now.getMinutes() + 60);
+    const preview = new Date(date + 'T' + time + ':00');
+    if (preview <= now) time = minToHHMM(now.getHours() * 60 + now.getMinutes() + 60);
+    $('#alarmDate').value = date;
+    $('#alarmTime').value = time;
+    $('#alarmSetClear').hidden = !task.alarm;
+    $('#alarmSetMask').classList.add('show');
+  }
+
+  function closeAlarmSettings() {
+    $('#alarmSetMask').classList.remove('show');
+    state.alarmSetTaskId = null;
+  }
+
+  function saveTaskAlarm() {
+    const id = state.alarmSetTaskId;
+    const task = taskById(id);
+    if (!task) return;
+    const date = $('#alarmDate').value;
+    const time = $('#alarmTime').value;
+    if (!date || !time) { toast('请选择提醒日期和时间'); return; }
+    const due = new Date(date + 'T' + time + ':00');
+    if (isNaN(due.getTime()) || due <= new Date()) {
+      toast('闹钟时间需要晚于现在');
+      return;
+    }
+    const tasks = Store.getTasks();
+    const t = tasks.find((x) => x.id === id);
+    if (!t) return;
+    t.alarm = true;
+    t.alarmDate = date;
+    t.alarmTime = time;
+    t.alarmFiredKey = '';
+    Store.saveTasks(tasks);
+    primeAudio();
+    requestNotificationPermission();
+    closeAlarmSettings();
+    toast('闹钟已设置：' + mdCN(due) + ' ' + time);
+  }
+
+  function clearTaskAlarm() {
+    const id = state.alarmSetTaskId;
+    if (!id) return;
+    const tasks = Store.getTasks();
+    const t = tasks.find((x) => x.id === id);
+    if (t) {
+      t.alarm = false;
+      t.alarmDate = '';
+      t.alarmTime = '';
+      t.alarmFiredKey = '';
+      Store.saveTasks(tasks);
+    }
+    closeAlarmSettings();
+    toast('闹钟已关闭');
+  }
+
+  function showNotification(task) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+      const n = new Notification('待办提醒 · 珠科管家', {
+        body: task.text + '\n' + alarmLabel(task),
+        tag: 'zhuke-alarm-' + task.id,
+        requireInteraction: true,
+      });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch (e) { /* 某些手机浏览器不支持直接构造通知 */ }
+  }
+
+  function ringAlarm(task) {
+    state.alarmRingTaskId = task.id;
+    $('#alarmRingTask').textContent = task.text;
+    const due = alarmDateTime(task);
+    $('#alarmRingTime').textContent = due
+      ? mdCN(due) + ' ' + task.alarmTime
+      : '闹钟时间到了';
+    $('#alarmRingMask').classList.add('show');
+    document.title = '⏰ 待办提醒 · 珠科管家';
+    startAlarmSound();
+    showNotification(task);
+  }
+
+  function stopAlarmRing() {
+    stopAlarmSound();
+    $('#alarmRingMask').classList.remove('show');
+    state.alarmRingTaskId = null;
+    document.title = '珠科管家 · 珠海科技学院';
+  }
+
+  function snoozeAlarm() {
+    const id = state.alarmRingTaskId;
+    if (!id) { stopAlarmRing(); return; }
+    const tasks = Store.getTasks();
+    const t = tasks.find((x) => x.id === id);
+    if (t) {
+      const d = new Date(Date.now() + 5 * 60 * 1000);
+      t.alarmDate = ymd(d);
+      t.alarmTime = minToHHMM(d.getHours() * 60 + d.getMinutes());
+      t.alarmFiredKey = '';
+      Store.saveTasks(tasks);
+      toast('将在 5 分钟后再次提醒');
+    }
+    stopAlarmRing();
+    setTimeout(checkAlarms, 500);
+  }
+
+  function completeAlarmTask() {
+    const id = state.alarmRingTaskId;
+    if (id) {
+      const t = taskById(id);
+      if (t && !t.done) toggleTask(id);
+    }
+    stopAlarmRing();
+    setTimeout(checkAlarms, 500);
+  }
+
+  function dismissAlarm() {
+    stopAlarmRing();
+    setTimeout(checkAlarms, 500);
+  }
+
+  function checkAlarms() {
+    if (state.alarmCheckBusy || state.alarmRingTaskId) return;
+    state.alarmCheckBusy = true;
+    try {
+      const tasks = Store.getTasks();
+      const now = Date.now();
+      let changed = false;
+      let fireTask = null;
+      for (const t of tasks) {
+        if (t.done || !t.alarm) continue;
+        const due = alarmDateTime(t);
+        if (!due) continue;
+        const key = t.alarmDate + 'T' + t.alarmTime;
+        if (t.alarmFiredKey === key) continue;
+        if (due.getTime() > now) continue;
+        // 页面关了很久再打开时，超过 30 分钟的旧提醒不再突然响铃
+        if (now - due.getTime() > 30 * 60 * 1000) {
+          t.alarmFiredKey = key;
+          changed = true;
+          continue;
+        }
+        t.alarmFiredKey = key;
+        changed = true;
+        fireTask = t;
+        break;
+      }
+      if (changed) Store.saveTasks(tasks);
+      if (fireTask) ringAlarm(fireTask);
+    } finally {
+      state.alarmCheckBusy = false;
+    }
+  }
+
+  /* =========================================================== 番茄钟 */
+  function pomodoroTodayCount() {
+    const today = ymd(new Date());
+    return Store.getPomodoros().filter((x) => x.date === today).length;
+  }
+
+  function renderPomodoro() {
+    const p = state.pomodoro;
+    const total = p.mode === 'focus' ? POMO_FOCUS : POMO_BREAK;
+    const progress = total ? Math.max(0, Math.min(100, (1 - p.remaining / total) * 100)) : 0;
+    const ring = $('#pomoRing');
+    if (!ring) return;
+    ring.style.setProperty('--p', progress.toFixed(2));
+    ring.classList.toggle('break', p.mode === 'break');
+    $('#pomoTime').textContent = fmtMMSS(p.remaining);
+    $('#pomoLabel').textContent = p.mode === 'focus' ? '专注' : '休息';
+    $$('#pomoModes button').forEach((b) => b.classList.toggle('active', b.dataset.pomoMode === p.mode));
+
+    let label = '开始';
+    if (p.running) label = '暂停';
+    else if (p.remaining < total && p.remaining > 0) label = '继续';
+    $('#pomoStart').textContent = label;
+
+    const count = pomodoroTodayCount();
+    $('#pomoToday').textContent = `今天完成 ${count} 个番茄`;
+    const slots = Math.max(8, count);
+    let tomatoes = '';
+    for (let i = 0; i < slots; i++) {
+      tomatoes += `<span class="tomato${i < count ? ' lit' : ''}" title="第 ${i + 1} 个番茄">🍅</span>`;
+    }
+    $('#tomatoRow').innerHTML = tomatoes;
+    $('#pomoHint').textContent = p.message || (p.mode === 'focus'
+      ? '完成一个专注番茄，就会亮起一个 🍅'
+      : '休息一下，等会儿再专注。');
+  }
+
+  function setPomodoroMode(mode, message) {
+    const duration = mode === 'break' ? POMO_BREAK : POMO_FOCUS;
+    state.pomodoro = {
+      mode,
+      running: false,
+      remaining: duration,
+      endsAt: null,
+      duration,
+      message: message || '',
+    };
+    renderPomodoro();
+  }
+
+  function togglePomodoro() {
+    const p = state.pomodoro;
+    if (p.running) {
+      p.remaining = Math.max(0, Math.ceil((p.endsAt - Date.now()) / 1000));
+      p.running = false;
+      p.endsAt = null;
+      renderPomodoro();
+      return;
+    }
+    if (p.remaining <= 0) p.remaining = p.duration;
+    p.running = true;
+    p.endsAt = Date.now() + p.remaining * 1000;
+    p.message = '';
+    primeAudio();
+    renderPomodoro();
+  }
+
+  function tickPomodoro() {
+    const p = state.pomodoro;
+    if (!p.running) return;
+    const left = Math.max(0, Math.ceil((p.endsAt - Date.now()) / 1000));
+    if (left === p.remaining) return;
+    p.remaining = left;
+    if (left > 0) { renderPomodoro(); return; }
+
+    p.running = false;
+    p.endsAt = null;
+    if (p.mode === 'focus') {
+      Store.addPomodoro({
+        id: uid('pomo-'),
+        date: ymd(new Date()),
+        duration: 25,
+        completedAt: new Date().toISOString(),
+      });
+      playChime();
+      toast('🍅 完成一个番茄！');
+      setPomodoroMode('break', '完成一个番茄！休息 5 分钟吧。');
+    } else {
+      playChime();
+      toast('休息结束，开始下一个番茄吧');
+      setPomodoroMode('focus', '休息结束，开始下一个番茄吧。');
+    }
+  }
+
+  function resetPomodoroTimer() {
+    setPomodoroMode('focus');
   }
 
   /* =========================================================== 月历 */
@@ -1134,7 +1526,7 @@
           <span class="course-color" style="background:${esc(c.color || '#5b9bd5')}"></span>
           <div class="course-info">
             <div class="ci-name">${esc(c.name)}</div>
-            <div class="ci-sub">第${first}-${last}节 · ${esc(weeksText(c))} · ${esc(courseBuilding(c))} ${esc(c.room || '')}${c.teacher ? ' · ' + esc(c.teacher) : ''}</div>
+            <div class="ci-sub">${periodText(first, last)} · ${esc(weeksText(c))} · ${esc(courseBuilding(c))} ${esc(c.room || '')}${c.teacher ? ' · ' + esc(c.teacher) : ''}</div>
           </div>
           <div class="course-actions">
             <button class="btn small" type="button" data-edit-course="${esc(c.id)}">编辑</button>
@@ -1276,6 +1668,99 @@
     toast('课程已删除');
   }
 
+  function setOcrProgress(pct, label) {
+    const bar = $('#ocrProgressBar');
+    if (bar) bar.style.width = Math.max(0, Math.min(100, pct)).toFixed(1) + '%';
+    if (label) $('#ocrStatus').textContent = label;
+  }
+
+  function handleOcrFile(file) {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { toast('请选择图片文件'); return; }
+    if (file.size > 15 * 1024 * 1024) { toast('图片超过 15MB，请压缩或裁剪后再试'); return; }
+    state.ocrFile = file;
+    state.ocrImageSize = null;
+    const img = $('#ocrPreview');
+    if (img.dataset.blobUrl) URL.revokeObjectURL(img.dataset.blobUrl);
+    const url = URL.createObjectURL(file);
+    img.dataset.blobUrl = url;
+    img.onload = () => { state.ocrImageSize = { width: img.naturalWidth, height: img.naturalHeight }; };
+    img.src = url;
+    $('#ocrStage').hidden = false;
+    $('#btnOcrRun').disabled = false;
+    $('#btnOcrCancel').disabled = false;
+    setOcrProgress(0, '图片已选择，点「开始识别」');
+  }
+
+  async function runOcr() {
+    if (!state.ocrFile || state.ocrBusy) return;
+    if (!OCR) { toast('OCR 模块没有加载'); return; }
+    state.ocrBusy = true;
+    $('#btnOcrRun').disabled = true;
+    $('#btnOcrCancel').disabled = true;
+    setOcrProgress(0, '正在加载 OCR 引擎…');
+    try {
+      const previewImg = $('#ocrPreview');
+      if (!state.ocrImageSize) {
+        if (previewImg.complete && previewImg.naturalWidth) {
+          state.ocrImageSize = { width: previewImg.naturalWidth, height: previewImg.naturalHeight };
+        } else {
+          await new Promise((resolve) => {
+            const old = previewImg.onload;
+            previewImg.onload = (ev) => {
+              if (typeof old === 'function') old(ev);
+              resolve();
+            };
+            previewImg.onerror = () => resolve();
+          });
+        }
+      }
+      const data = await OCR.recognize(state.ocrFile, {
+        onProgress: (m) => {
+          const status = (m && m.status) || '';
+          const progress = (m && typeof m.progress === 'number') ? m.progress : 0;
+          if (status === 'recognizing text') {
+            setOcrProgress(progress * 100, `正在识别文字… ${Math.round(progress * 100)}%`);
+          } else if (/loading|initializing|language|tesseract/i.test(status)) {
+            setOcrProgress(Math.max(2, progress * 30), '正在加载中文 OCR 模型…');
+          }
+        },
+      });
+      if (!state.ocrImageSize) state.ocrImageSize = { width: 0, height: 0 };
+      const result = Importer.parseOcr(data, state.ocrImageSize);
+      state.pendingImport = result;
+      const text = result.structuredText || result.text || '';
+      $('#importText').value = text;
+      renderImportPreview(result);
+      setOcrProgress(100, result.courses.length
+        ? `识别完成：找到 ${result.courses.length} 个上课时段，请核对预览`
+        : '识别完成，但没有还原出完整课程；可以修改下方文字后重新解析');
+      if (result.courses.length) toast(`识别到 ${result.courses.length} 个上课时段`);
+      else toast('没有识别出完整课程，请查看提示');
+    } catch (e) {
+      console.error(e);
+      setOcrProgress(0, e.message || '图片识别失败');
+      toast(e.message || '图片识别失败');
+    } finally {
+      state.ocrBusy = false;
+      $('#btnOcrRun').disabled = false;
+      $('#btnOcrCancel').disabled = false;
+    }
+  }
+
+  function clearOcrStage() {
+    if (state.ocrBusy) return;
+    const img = $('#ocrPreview');
+    if (img.dataset.blobUrl) URL.revokeObjectURL(img.dataset.blobUrl);
+    img.removeAttribute('src');
+    delete img.dataset.blobUrl;
+    state.ocrFile = null;
+    state.ocrImageSize = null;
+    $('#ocrStage').hidden = true;
+    $('#ocrImageFile').value = '';
+    setOcrProgress(0, '');
+  }
+
   function parseImport() {
     const text = $('#importText').value;
     const result = Importer.parse(text);
@@ -1313,7 +1798,7 @@
           <span class="dot" style="background:${esc(c.color || '#5b9bd5')}"></span>
           <div class="pv-main">
             <div>${esc(c.name)}${c.teacher ? ' · ' + esc(c.teacher) : ''}</div>
-            <div class="pv-sub">${DAY_NAMES[c.day - 1]} 第${first}-${last}节 · ${esc(weeksText(c))} · ${esc(c.building || '地点待定')} ${esc(c.room || '')}</div>
+            <div class="pv-sub">${DAY_NAMES[c.day - 1]} ${periodText(first, last)} · ${esc(weeksText(c))} · ${esc(c.building || '地点待定')} ${esc(c.room || '')}</div>
           </div>
         </div>`;
       });
@@ -1528,13 +2013,25 @@
     /* 待办 */
     $('#taskForm').addEventListener('submit', (e) => {
       e.preventDefault();
-      addTask($('#taskInput').value, $('#taskTime').value);
+      addTask($('#taskInput').value, $('#taskTime').value, state.taskAlarmOn);
+    });
+    $('#taskAlarmToggle').addEventListener('click', () => {
+      setTaskAlarmToggle(!state.taskAlarmOn);
+      if (state.taskAlarmOn) {
+        primeAudio();
+        requestNotificationPermission();
+        if (!$('#taskTime').value) {
+          const now = new Date();
+          $('#taskTime').value = minToHHMM(now.getHours() * 60 + now.getMinutes() + 60);
+        }
+      }
     });
     $('#taskList').addEventListener('click', (e) => {
       const btn = e.target.closest('button[data-action]');
       if (!btn) return;
       if (btn.dataset.action === 'toggle') toggleTask(btn.dataset.id);
       if (btn.dataset.action === 'del') deleteTask(btn.dataset.id);
+      if (btn.dataset.action === 'alarm') openAlarmSettings(btn.dataset.id);
     });
     $('#dayStrip').addEventListener('click', (e) => {
       const btn = e.target.closest('button[data-date]');
@@ -1543,6 +2040,27 @@
     $('#prevWeek').addEventListener('click', () => setSelectedDate(addDays(state.selectedDate, -7), true));
     $('#nextWeek').addEventListener('click', () => setSelectedDate(addDays(state.selectedDate, 7), true));
     $('#btnToday').addEventListener('click', () => setSelectedDate(new Date(), true));
+
+    /* 闹钟 */
+    $('#alarmSetCancel').addEventListener('click', closeAlarmSettings);
+    $('#alarmSetMask').addEventListener('click', (e) => { if (e.target === $('#alarmSetMask')) closeAlarmSettings(); });
+    $('#alarmSetSave').addEventListener('click', saveTaskAlarm);
+    $('#alarmSetClear').addEventListener('click', clearTaskAlarm);
+    $('#alarmRingDone').addEventListener('click', completeAlarmTask);
+    $('#alarmRingSnooze').addEventListener('click', snoozeAlarm);
+    $('#alarmRingDismiss').addEventListener('click', dismissAlarm);
+
+    /* 番茄钟 */
+    $('#pomoStart').addEventListener('click', togglePomodoro);
+    $('#pomoReset').addEventListener('click', () => setPomodoroMode(state.pomodoro.mode));
+    $('#pomoModes').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-pomo-mode]');
+      if (!btn) return;
+      const mode = btn.dataset.pomoMode;
+      if (mode === state.pomodoro.mode) return;
+      if (state.pomodoro.running && !window.confirm('切换模式会重置当前计时，继续？')) return;
+      setPomodoroMode(mode);
+    });
 
     /* 月历 */
     $('#btnCalendar').addEventListener('click', openCalendar);
@@ -1613,6 +2131,13 @@
     $('#btnGoRegister').addEventListener('click', showMineAccountsAndRegister);
 
     /* 课表导入 */
+    $('#ocrImageFile').addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      handleOcrFile(file);
+    });
+    $('#btnOcrRun').addEventListener('click', runOcr);
+    $('#btnOcrCancel').addEventListener('click', clearOcrStage);
     $('#importFile').addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
       e.target.value = '';
@@ -1735,19 +2260,30 @@
       setDestination(modalCourse.placeId);
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { closeModal(); closeCalendar(); }
+      if (e.key !== 'Escape') return;
+      closeModal();
+      closeCalendar();
+      closeAlarmSettings();
+      if (state.alarmRingTaskId) dismissAlarm();
     });
 
     initMapClick();
     bindSettings();
     computeRoute();
     renderNext();
+    renderPomodoro();
+    checkAlarms();
 
     Store.subscribe((type) => {
       if (type === 'auth') {
         state.editingCourseId = null;
         state.pendingImport = null;
         state.pendingAvatar = null;
+        state.taskAlarmOn = false;
+        setTaskAlarmToggle(false);
+        closeAlarmSettings();
+        if (state.alarmRingTaskId) stopAlarmRing();
+        resetPomodoroTimer();
         refreshActiveCourses();
         renderUserChip();
         renderTimetable();
@@ -1766,6 +2302,7 @@
         renderTimetable();
         renderNext();
         renderTodo();
+        renderPomodoro();
         if (isMineActive()) {
           renderCourseAdmin();
           renderProfileStats();
@@ -1781,6 +2318,15 @@
     if (tickTimer) clearInterval(tickTimer);
     tickTimer = setInterval(renderNext, 1000);
 
+    setInterval(tickPomodoro, 500);
+    setInterval(checkAlarms, 10000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        tickPomodoro();
+        checkAlarms();
+      }
+    });
+
     // 页面跨过午夜时，任务栏自动跟到新的一天
     let lastTodayKey = ymd(new Date());
     setInterval(() => {
@@ -1792,6 +2338,7 @@
       else renderTodo();
       renderTimetable();
       renderNext();
+      renderPomodoro();
     }, 30000);
   }
 

@@ -104,13 +104,41 @@
           </div>
 
           <form class="task-form" id="taskForm">
-            <input type="text" id="taskInput" maxlength="120" autocomplete="off" placeholder="添加任务，按回车确认">
+            <input type="text" id="taskInput" maxlength="120" autocomplete="off" placeholder="添加一条待办…">
             <input type="time" id="taskTime" title="时间（可选）" aria-label="任务时间（可选）">
+            <button class="alarm-toggle" id="taskAlarmToggle" type="button" aria-pressed="false" title="添加任务时同时设置闹钟">🔔</button>
             <button class="btn primary small" type="submit">添加</button>
           </form>
 
           <div class="task-list" id="taskList"></div>
           <div class="todo-foot" id="todoFoot"></div>
+        </div>
+
+        <div class="card pomodoro-card">
+          <div class="pomodoro-head">
+            <div>
+              <h2>🍅 番茄钟</h2>
+              <div class="hint" id="pomoToday">今天完成 0 个番茄</div>
+            </div>
+            <div class="pomo-modes" id="pomoModes">
+              <button class="active" data-pomo-mode="focus" type="button">专注 25</button>
+              <button data-pomo-mode="break" type="button">休息 5</button>
+            </div>
+          </div>
+          <div class="pomodoro-main">
+            <div class="pomo-ring" id="pomoRing" style="--p:0">
+              <div class="pomo-ring-inner">
+                <div class="pomo-time" id="pomoTime">25:00</div>
+                <div class="pomo-label" id="pomoLabel">专注</div>
+              </div>
+            </div>
+            <div class="pomo-controls">
+              <button class="btn primary" id="pomoStart" type="button">开始</button>
+              <button class="btn" id="pomoReset" type="button">重置</button>
+              <div class="hint" id="pomoHint">完成一个专注番茄，就会亮起一个 🍅</div>
+            </div>
+          </div>
+          <div class="tomato-row" id="tomatoRow"></div>
         </div>
       </aside>
     </div>
@@ -278,7 +306,7 @@
             </div>
 
             <div class="mine-tabs" id="courseTabs">
-              <button class="mine-subtab active" data-course-pane="import" type="button">网页导入</button>
+              <button class="mine-subtab active" data-course-pane="import" type="button">导入课表</button>
               <button class="mine-subtab" data-course-pane="manual" type="button">手动输入</button>
               <button class="mine-subtab" data-course-pane="list" type="button">当前课表 <span id="courseCount">0</span></button>
             </div>
@@ -286,9 +314,34 @@
 
           <div class="course-pane active" id="pane-import">
             <div class="card">
-              <h2>从网页导入</h2>
-              <p class="hint">把课表网页里的表格选中复制，粘贴到下面；也可以上传保存下来的网页 HTML、JSON 或文本。导入前会先显示预览，确认无误再替换或追加。</p>
-              <label class="field" style="margin-top:10px">
+              <h2>从图片 / 网页导入</h2>
+              <p class="hint">上传课表截图自动识别，或者把课表网页里的表格复制粘贴到下面；也支持保存的 HTML、JSON 和文本。导入前会先显示预览，确认无误再替换或追加。</p>
+
+              <div class="image-import">
+                <div class="image-import-head">
+                  <div>
+                    <b>从课表截图导入</b>
+                    <div class="hint">支持 PNG / JPG / WEBP。图片只在浏览器里识别，不会上传到服务器。</div>
+                  </div>
+                  <input type="file" id="ocrImageFile" accept="image/png,image/jpeg,image/webp,image/bmp,image/*">
+                </div>
+                <div class="ocr-stage" id="ocrStage" hidden>
+                  <div class="ocr-preview-wrap"><img id="ocrPreview" alt="待识别的课表截图"></div>
+                  <div class="ocr-side">
+                    <div class="ocr-status" id="ocrStatus">图片已选择</div>
+                    <div class="ocr-progress"><span id="ocrProgressBar"></span></div>
+                    <div class="ocr-actions">
+                      <button class="btn primary" id="btnOcrRun" type="button">开始识别</button>
+                      <button class="btn" id="btnOcrCancel" type="button">取消</button>
+                    </div>
+                    <div class="hint">首次识别会联网加载中文 OCR 模型（约 20MB），需要十几秒；之后浏览器会缓存。识别结果会放进下面的文本框，方便你校正。</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="import-or"><span>或者使用文本 / HTML / JSON</span></div>
+
+              <label class="field">
                 <span>粘贴课表内容</span>
                 <textarea id="importText" rows="7" placeholder="支持：带制表符的网页表格 / 保存的 HTML / 每行「课程名|老师|周一|1-2|1-16|明德楼|A418」/ JSON"></textarea>
               </label>
@@ -302,6 +355,7 @@
               <details class="help">
                 <summary>导入格式说明</summary>
                 <ul>
+                  <li><b>图片 OCR：</b>上传课表截图，程序会尝试按表格位置还原课程；截图越清晰、越正，效果越好，识别后仍建议核对。</li>
                   <li><b>网页表格文本：</b>在课表网页上选中整张表复制，粘贴进来。表头需要有「周一…周日」。</li>
                   <li><b>网页 HTML：</b>把课表网页另存为 .html 后上传，程序会读取其中的表格。</li>
                   <li><b>逐行文本：</b>一行一门课，字段用 <code>|</code> 分隔：<code>课程名|老师|周一|1-2|1-16|明德楼|A418</code>。</li>
@@ -438,12 +492,46 @@
   </div>
 </div>
 
+<!-- 设置任务闹钟 -->
+<div class="modal-mask" id="alarmSetMask">
+  <div class="modal">
+    <h3>⏰ 设置任务闹钟</h3>
+    <div class="hint" id="alarmSetTask">—</div>
+    <div class="alarm-form">
+      <label class="field"><span>提醒日期</span><input type="date" id="alarmDate"></label>
+      <label class="field"><span>提醒时间</span><input type="time" id="alarmTime"></label>
+    </div>
+    <div class="hint" style="margin-top:10px">闹钟只在页面打开时生效；允许浏览器通知后，到点还会发一条系统通知。</div>
+    <div class="actions">
+      <button class="btn ghost" id="alarmSetClear" type="button">关闭闹钟</button>
+      <button class="btn" id="alarmSetCancel" type="button">取消</button>
+      <button class="btn primary" id="alarmSetSave" type="button">保存闹钟</button>
+    </div>
+  </div>
+</div>
+
+<!-- 闹钟响铃 -->
+<div class="modal-mask" id="alarmRingMask">
+  <div class="modal alarm-ring-modal">
+    <div class="ring-emoji">⏰</div>
+    <h3>待办提醒</h3>
+    <div class="ring-task" id="alarmRingTask">—</div>
+    <div class="hint" id="alarmRingTime"></div>
+    <div class="actions">
+      <button class="btn primary" id="alarmRingDone" type="button">完成这条</button>
+      <button class="btn" id="alarmRingSnooze" type="button">5 分钟后再提醒</button>
+      <button class="btn ghost" id="alarmRingDismiss" type="button">知道了</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="js/data.js"></script>
 <script src="js/router.js"></script>
 <script src="js/store.js"></script>
 <script src="js/import.js"></script>
+<script src="js/ocr.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

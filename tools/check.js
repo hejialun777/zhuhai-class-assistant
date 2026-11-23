@@ -131,7 +131,7 @@ const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
 for (const s of scripts) {
   if (!fs.existsSync(path.join(root, s))) err(`index.html 引入了不存在的脚本: ${s}`);
 }
-for (const f of ['js/data.js', 'js/router.js', 'js/store.js', 'js/import.js', 'js/app.js']) {
+for (const f of ['js/data.js', 'js/router.js', 'js/store.js', 'js/import.js', 'js/ocr.js', 'js/app.js']) {
   if (!scripts.includes(f)) err(`index.html 没有引入 ${f}`);
 }
 console.log(`  index.html 引入的脚本: ${scripts.join(', ')}`);

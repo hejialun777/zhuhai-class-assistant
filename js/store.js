@@ -66,6 +66,7 @@
       },
       tasks: [],
       courses: null,
+      pomodoros: [],
     };
   }
 
@@ -77,6 +78,7 @@
       profile: Object.assign({}, base.profile, raw.profile || {}),
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       courses: Array.isArray(raw.courses) ? raw.courses : null,
+      pomodoros: Array.isArray(raw.pomodoros) ? raw.pomodoros : [],
     };
   }
 
@@ -137,6 +139,17 @@
     data.courses = null;
     persistCurrent();
     emit('data', { scope: 'courses' });
+  }
+
+  function getPomodoros() {
+    return currentData().pomodoros.map((x) => Object.assign({}, x));
+  }
+
+  function addPomodoro(record) {
+    const data = currentData();
+    data.pomodoros.push(record);
+    persistCurrent();
+    emit('data', { scope: 'pomodoros' });
   }
 
   function updateProfile(patch) {
@@ -298,6 +311,8 @@
     getCourses,
     saveCourses,
     resetCourses,
+    getPomodoros,
+    addPomodoro,
     register,
     login,
     switchTo,

@@ -187,7 +187,7 @@
       }
     }
 
-    return { building, room, placeId };
+    return { building, room: String(room || '').replace(/\s+/g, ''), placeId };
   }
 
   function inferTeacher(lines, name) {
@@ -586,6 +586,318 @@
     return { format: '网页 HTML', courses: dedupe(courses, warnings), warnings };
   }
 
+  /* --------------------------------------------------------------- 图片 OCR */
+  const DAY_CN = ['一', '二', '三', '四', '五', '六', '日'];
+
+  function isPunctWord(s) {
+    return /^[\s,，.。;；:：、|丨()（）\[\]【】<>《》!！?？'"“”‘’·\-—_=+*#@%&/\\]+$/.test(s);
+  }
+
+  function parseTsvWords(tsv) {
+    const out = [];
+    String(tsv || '').split('\n').slice(1).forEach((line) => {
+      const p = line.split('\t');
+      if (p.length < 12 || Number(p[0]) !== 5) return;
+      const text = clean(p.slice(11).join('\t'));
+      if (!text || isPunctWord(text)) return;
+      out.push({
+        left: Number(p[6]) || 0,
+        top: Number(p[7]) || 0,
+        w: Number(p[8]) || 0,
+        h: Number(p[9]) || 0,
+        conf: Number(p[10]) || 0,
+        text,
+      });
+    });
+    return out;
+  }
+
+  function nearestPeriodByTime(text) {
+    const m = String(text || '').match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    const mins = Number(m[1]) * 60 + Number(m[2]);
+    let best = null, bestD = Infinity;
+    const list = (typeof PERIODS !== 'undefined' && Array.isArray(PERIODS)) ? PERIODS : [];
+    list.forEach((p) => {
+      const t = p.start.split(':').map(Number);
+      const tm = t[0] * 60 + t[1];
+      const d = Math.abs(tm - mins);
+      if (d < bestD) { bestD = d; best = p.no; }
+    });
+    return bestD <= 20 ? best : null;
+  }
+
+  function detectPeriodRows(leftWords, H) {
+    const sorted = leftWords.slice().sort((a, b) => (a.top + a.h / 2) - (b.top + b.h / 2));
+    const groups = [];
+    const tol = Math.max(30, H * 0.06);
+    sorted.forEach((w) => {
+      const c = w.top + w.h / 2;
+      const g = groups[groups.length - 1];
+      if (g && Math.abs(c - g.c) <= tol) {
+        g.items.push(w);
+        g.c = (g.c * g.items.length + c) / (g.items.length + 1);
+      } else {
+        groups.push({ c, items: [w] });
+      }
+    });
+
+    const rows = [];
+    groups.forEach((g) => {
+      let p = null;
+      for (const w of g.items) {
+        if (/^\d{1,2}$/.test(w.text)) {
+          const n = Number(w.text);
+          if (n >= 1 && n <= 12) { p = n; break; }
+        }
+      }
+      if (!p) {
+        for (const w of g.items) {
+          const byTime = nearestPeriodByTime(w.text);
+          if (byTime) { p = byTime; break; }
+        }
+      }
+      if (p) {
+        rows.push({ p, c: g.c, top: Math.min.apply(null, g.items.map((x) => x.top)) });
+      }
+    });
+
+    const seen = new Set();
+    return rows
+      .sort((a, b) => a.top - b.top)
+      .filter((r) => { if (seen.has(r.p)) return false; seen.add(r.p); return true; });
+  }
+
+  function detectDayHeaders(rawWords, H) {
+    const found = [];
+    const sorted = rawWords.slice().sort((a, b) => a.top - b.top || a.left - b.left);
+    sorted.forEach((w) => {
+      const m = w.text.match(/(?:星期|周)\s*([一二三四五六日天1-7])/);
+      if (!m) return;
+      const c = m[1];
+      const day = /[1-7]/.test(c) ? Number(c) : DAY_CHARS[c];
+      if (day) found.push({ day, cx: w.left + w.w / 2, top: w.top });
+    });
+
+    // OCR 有时会把「星期」「一」拆成两个词
+    sorted.forEach((w, i) => {
+      if (!/^(星期|周)$/.test(w.text)) return;
+      const next = sorted.slice(i + 1).find((x) =>
+        Math.abs((x.top + x.h / 2) - (w.top + w.h / 2)) < Math.max(w.h, x.h) * 0.8 &&
+        x.left >= w.left && x.left - (w.left + w.w) < 45
+      );
+      if (!next) return;
+      const c = next.text.trim();
+      const day = /^[1-7]$/.test(c) ? Number(c) : DAY_CHARS[c];
+      if (day && /^[一二三四五六日天1-7]$/.test(c)) {
+        found.push({ day, cx: (w.left + next.left + next.w) / 2, top: Math.min(w.top, next.top) });
+      }
+    });
+
+    if (found.length < 2) return null;
+    const groups = [];
+    found.forEach((f) => {
+      const g = groups.find((x) => Math.abs(x.top - f.top) < H * 0.05);
+      if (g) g.items.push(f); else groups.push({ top: f.top, items: [f] });
+    });
+    groups.sort((a, b) => b.items.length - a.items.length);
+    const best = groups[0];
+    const byDay = {};
+    best.items.forEach((f) => { if (!byDay[f.day]) byDay[f.day] = f.cx; });
+    const cols = Object.keys(byDay)
+      .map((d) => ({ day: Number(d), cx: byDay[d] }))
+      .sort((a, b) => a.cx - b.cx);
+    return cols.length >= 2 ? cols : null;
+  }
+
+  function joinOcrLine(words) {
+    words = words.slice().sort((a, b) => a.left - b.left);
+    let s = words.map((w) => w.text).join(' ');
+    s = s.replace(/([一-龥])\s+(?=[一-龥])/g, '$1');
+    return clean(s);
+  }
+
+  function weeksToPipe(w) {
+    w = w || { type: 'all' };
+    if (w.type === 'odd') return '单周';
+    if (w.type === 'even') return '双周';
+    if (w.type === 'range') return w.from === w.to ? String(w.from) : w.from + '-' + w.to;
+    return '';
+  }
+
+  function courseToPipe(c) {
+    const first = Math.min.apply(null, c.periods);
+    const last = Math.max.apply(null, c.periods);
+    const day = '周' + (DAY_CN[c.day - 1] || c.day);
+    return [c.name, c.teacher || '', day, first + '-' + last,
+      weeksToPipe(c.weeks), c.building || '地点待定', c.room || ''].join('|');
+  }
+
+  function mergeAdjacentCourses(courses) {
+    const out = [];
+    courses.forEach((c) => {
+      const key = [c.name, c.day, c.teacher || '', c.building || '', c.room || '',
+        JSON.stringify(c.weeks || { type: 'all' })].join('|');
+      const hit = out.find((x) => {
+        if (x.__mergeKey !== key) return false;
+        const a = Math.min.apply(null, x.periods), b = Math.max.apply(null, x.periods);
+        const c1 = Math.min.apply(null, c.periods), c2 = Math.max.apply(null, c.periods);
+        return c1 <= b + 1 && c2 >= a - 1;
+      });
+      if (hit) {
+        const all = hit.periods.concat(c.periods);
+        hit.periods = range(Math.min.apply(null, all), Math.max.apply(null, all));
+      } else {
+        c.__mergeKey = key;
+        out.push(c);
+      }
+    });
+    out.forEach((c) => { delete c.__mergeKey; });
+    return out;
+  }
+
+  function parseOcr(data, dims) {
+    const warnings = [];
+    const rawText = clean((data && data.text) || '').replace(/ +/g, ' ').trim();
+    const W = Number(dims && dims.width) || 0;
+    const H = Number(dims && dims.height) || 0;
+    const rawWords = parseTsvWords(data && data.tsv);
+
+    if (!rawWords.length || !W || !H) {
+      const fallback = parse(rawText);
+      fallback.format = '图片 OCR（文字）';
+      fallback.warnings = (fallback.warnings || []).concat(['图片版式没有解析出来，已尝试按普通文字识别，请核对。']);
+      fallback.text = rawText;
+      return fallback;
+    }
+
+    const words = rawWords.filter((w) => w.conf >= 40);
+    const leftLimit = W * 0.12;
+    const leftWords = words.filter((w) => w.left + w.w / 2 < leftLimit);
+    const bodyWords = words.filter((w) => w.left + w.w / 2 >= leftLimit);
+
+    let periodRows = detectPeriodRows(leftWords, H);
+    if (!periodRows.length) {
+      warnings.push('没有识别出左侧的节次/时间，无法可靠还原表格；请检查图片或改用手动输入。');
+      const fallback = parse(rawText);
+      fallback.format = '图片 OCR（文字）';
+      fallback.warnings = (fallback.warnings || []).concat(warnings);
+      fallback.text = rawText;
+      return fallback;
+    }
+
+    const minY = periodRows[0].top - Math.max(10, H * 0.02);
+
+    // 列：优先读星期表头；读不到时按正文列从左到右映射周一、周二…
+    let columns = detectDayHeaders(rawWords, H);
+    let mappedByHeader = true;
+    if (!columns) {
+      mappedByHeader = false;
+      const items = bodyWords
+        .map((w) => ({ w, cx: w.left + w.w / 2 }))
+        .filter((x) => (x.w.top + x.w.h / 2) >= minY)
+        .sort((a, b) => a.cx - b.cx);
+      const clusters = [];
+      items.forEach((x) => {
+        const g = clusters[clusters.length - 1];
+        if (g && x.cx - g.last <= W * 0.1) {
+          g.items.push(x.w);
+          g.last = x.cx;
+        } else {
+          clusters.push({ items: [x.w], last: x.cx });
+        }
+      });
+      columns = clusters.map((g, i) => ({
+        day: i + 1,
+        cx: g.items.reduce((s, w) => s + (w.left + w.w / 2), 0) / g.items.length,
+      }));
+      if (columns.length) {
+        warnings.push('没有读到清晰的星期表头，已按从左到右「周一、周二…」对应各列，请核对星期。');
+      }
+    }
+    if (!columns.length) {
+      warnings.push('没有识别出课表列。');
+      const fallback = parse(rawText);
+      fallback.format = '图片 OCR（文字）';
+      fallback.warnings = (fallback.warnings || []).concat(warnings);
+      fallback.text = rawText;
+      return fallback;
+    }
+    if (columns.length > 7) columns = columns.slice(0, 7);
+
+    // 行带：用下一行节次标签的位置作为上一行的下边界，避免把地点行分到下一节
+    const bands = periodRows.map((r, i) => {
+      const start = i === 0 ? 0 : periodRows[i - 1]._end;
+      const end = i < periodRows.length - 1
+        ? periodRows[i + 1].top - Math.max(6, H * 0.01)
+        : H;
+      r._end = end;
+      return { period: r.p, start, end };
+    });
+
+    const cells = {};
+    bodyWords.forEach((w) => {
+      const cy = w.top + w.h / 2;
+      if (cy < minY) return;
+      const cx = w.left + w.w / 2;
+      let col = columns[0], best = Infinity;
+      columns.forEach((c) => {
+        const d = Math.abs(cx - c.cx);
+        if (d < best) { best = d; col = c; }
+      });
+      const band = bands.find((b) => cy >= b.start && cy < b.end);
+      if (!band) return;
+      const key = col.day + '|' + band.period;
+      (cells[key] = cells[key] || []).push(w);
+    });
+
+    const courses = [];
+    Object.keys(cells).forEach((key) => {
+      const ws = cells[key].slice().sort((a, b) => (a.top + a.h / 2) - (b.top + b.h / 2));
+      const lines = [];
+      ws.forEach((w) => {
+        const cy = w.top + w.h / 2;
+        const line = lines[lines.length - 1];
+        if (line && Math.abs(cy - line.c) <= Math.max(18, H * 0.022)) {
+          line.items.push(w);
+          line.c = (line.c * line.items.length + cy) / (line.items.length + 1);
+        } else {
+          lines.push({ c: cy, items: [w] });
+        }
+      });
+      const text = lines.map((l) => joinOcrLine(l.items)).filter(Boolean).join('\n');
+      if (!text) return;
+      const [day, period] = key.split('|').map(Number);
+      const c = makeCourseFromBlock(text, { day, periods: [period] });
+      if (c) courses.push(c);
+    });
+
+    let merged = mergeAdjacentCourses(courses);
+    merged = dedupe(merged, warnings);
+
+    if (!merged.length) {
+      const fallback = parse(rawText);
+      if (fallback.courses && fallback.courses.length) {
+        fallback.format = '图片 OCR（文字）';
+        fallback.warnings = (fallback.warnings || []).concat(warnings).concat(['图片版式未能还原，已尝试按普通文字解析，请核对。']);
+        fallback.text = rawText;
+        return fallback;
+      }
+      warnings.push('图片里没有识别出完整课程。可以换一张更清晰、没有倾斜的截图，或改用手动输入。');
+    } else {
+      warnings.push('图片识别只作辅助，请核对课程名、星期、节次和地点。');
+      if (!mappedByHeader) warnings.push('当前列顺序按周一到周日排列；如果某天没课，可能会错位，请特别核对。');
+    }
+
+    return {
+      format: '图片 OCR',
+      courses: merged,
+      warnings,
+      text: rawText,
+      structuredText: merged.map(courseToPipe).join('\n'),
+    };
+  }
+
   /* --------------------------------------------------------------- 入口 */
   function parse(text) {
     const s = String(text == null ? '' : text).replace(/^﻿/, '').trim();
@@ -611,6 +923,7 @@
 
   root.ScheduleImport = {
     parse,
+    parseOcr,
     parseWeeks,
     parsePeriods,
     parseDay,

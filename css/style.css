@@ -315,8 +315,8 @@ input[type="checkbox"] { accent-color: var(--brand); }
   align-items: start;
 }
 .schedule-main { min-width: 0; }
-.schedule-side { min-width: 0; position: sticky; top: 112px; }
-.todo-card { overflow: auto; max-height: calc(100vh - 128px); }
+.schedule-side { min-width: 0; }
+.todo-card { }
 
 /* ---------------- 课表 ---------------- */
 .grid-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -552,6 +552,28 @@ input[type="checkbox"] { accent-color: var(--brand); }
   color: var(--ink-2);
 }
 .task-form .btn { padding: 6px 10px; font-size: 13px; }
+.alarm-toggle {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 9px;
+  font-size: 15px;
+  cursor: pointer;
+  opacity: .55;
+  transition: opacity .12s, background .12s, border-color .12s;
+}
+.alarm-toggle:hover { opacity: 1; background: var(--warn-soft); }
+.alarm-toggle.active {
+  opacity: 1;
+  background: var(--warn-soft);
+  border-color: #e6bd7d;
+  box-shadow: 0 0 0 2px rgba(201, 112, 15, .08);
+}
 
 .task-list { margin-top: 10px; }
 .task-section-label {
@@ -605,6 +627,33 @@ input[type="checkbox"] { accent-color: var(--brand); }
 }
 .task-item.done { opacity: .5; }
 .task-item.done .task-text { text-decoration: line-through; color: var(--ink-2); }
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+}
+.task-alarm {
+  appearance: none;
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: #b4bec9;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 3px;
+  cursor: pointer;
+  border-radius: 5px;
+  opacity: .65;
+}
+.task-alarm:hover { background: var(--warn-soft); opacity: 1; }
+.task-alarm.on { color: var(--warn); opacity: 1; }
+.task-meta .alarm-tag {
+  display: inline-block;
+  margin-left: 5px;
+  color: var(--warn);
+  font-weight: 600;
+}
 .task-del {
   appearance: none;
   flex: none;
@@ -632,6 +681,201 @@ input[type="checkbox"] { accent-color: var(--brand); }
   font-size: 10.5px;
   color: var(--ink-3);
 }
+
+/* ---------------- 番茄钟 ---------------- */
+.pomodoro-card { padding-top: 13px; }
+.pomodoro-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pomodoro-head h2 { margin: 0; font-size: 15px; color: var(--ink); }
+.pomo-modes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: #f1f4f6;
+  border-radius: 8px;
+  flex: none;
+}
+.pomo-modes button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 10.5px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pomo-modes button.active {
+  background: #fff;
+  color: var(--brand);
+  font-weight: 650;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, .1);
+}
+.pomodoro-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 11px;
+}
+.pomo-ring {
+  width: 104px;
+  height: 104px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(var(--brand) calc(var(--p) * 1%), #e8eef0 0);
+  transition: background .2s;
+}
+.pomo-ring.break { background: conic-gradient(#e0a03a calc(var(--p) * 1%), #f3ead9 0); }
+.pomo-ring-inner {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.pomo-time {
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.5px;
+}
+.pomo-label { font-size: 10px; color: var(--ink-3); margin-top: 2px; }
+.pomo-controls {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pomo-controls .btn { width: 100%; padding: 6px 8px; font-size: 12.5px; }
+.pomo-controls .hint { font-size: 10.5px; line-height: 1.4; }
+.tomato-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--line);
+  font-size: 18px;
+  line-height: 1.15;
+}
+.tomato {
+  display: inline-block;
+  filter: grayscale(1);
+  opacity: .24;
+  transition: filter .2s, opacity .2s, transform .2s;
+}
+.tomato.lit {
+  filter: none;
+  opacity: 1;
+  transform: translateY(-1px);
+  text-shadow: 0 2px 5px rgba(220, 80, 60, .25);
+}
+
+/* ---------------- 图片 OCR ---------------- */
+.image-import {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed #cfd9e2;
+  border-radius: 11px;
+  background: #fbfcfd;
+}
+.image-import-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.image-import-head b { display: block; font-size: 13.5px; }
+.image-import-head .hint { margin-top: 1px; }
+.image-import input[type="file"] { max-width: 100%; flex: none; }
+.ocr-stage {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-top: 11px;
+}
+.ocr-preview-wrap {
+  width: min(42%, 250px);
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #eef2f4;
+  overflow: hidden;
+}
+.ocr-preview-wrap img {
+  display: block;
+  width: 100%;
+  max-height: 190px;
+  object-fit: contain;
+}
+.ocr-side { flex: 1; min-width: 0; }
+.ocr-status { font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+.ocr-progress {
+  height: 6px;
+  border-radius: 4px;
+  background: #e8eef0;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.ocr-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--brand);
+  border-radius: 4px;
+  transition: width .25s;
+}
+.ocr-actions { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 7px; }
+.import-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 10px;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.import-or::before, .import-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* ---------------- 闹钟 ---------------- */
+.alarm-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.alarm-ring-modal { text-align: center; max-width: 400px; }
+.ring-emoji {
+  font-size: 42px;
+  line-height: 1;
+  display: inline-block;
+  animation: ring-shake .7s ease-in-out infinite alternate;
+}
+@keyframes ring-shake {
+  from { transform: rotate(-12deg); }
+  to { transform: rotate(12deg); }
+}
+.ring-task { font-size: 16px; font-weight: 650; margin: 9px 0 3px; word-break: break-word; }
+.alarm-ring-modal .actions { justify-content: center; flex-wrap: wrap; }
 
 /* ---------------- 月历 ---------------- */
 .calendar-modal {
@@ -1203,6 +1447,14 @@ input[type="checkbox"] { accent-color: var(--brand); }
   .cal-head h3 { font-size: 15px; min-width: 88px; }
   .modal { padding: 15px 14px; }
   .task-form input[type="time"] { width: 76px; }
+  .ocr-stage { flex-direction: column; }
+  .ocr-preview-wrap { width: 100%; max-height: 220px; }
+  .ocr-preview-wrap img { max-height: 220px; }
+  .pomo-modes button { padding: 4px 6px; }
+  .pomodoro-main { gap: 12px; }
+  .pomo-ring { width: 96px; height: 96px; }
+  .pomo-ring-inner { width: 78px; height: 78px; }
+  .pomo-time { font-size: 21px; }
 }
 
 @media (max-width: 430px) {
@@ -1213,4 +1465,5 @@ input[type="checkbox"] { accent-color: var(--brand); }
   .task-form { flex-wrap: wrap; }
   .task-form input[type="text"] { flex-basis: 100%; }
   .task-form input[type="time"] { flex: 1; width: auto; }
+  .alarm-form { grid-template-columns: 1fr; }
 }
